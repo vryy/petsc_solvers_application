@@ -1,0 +1,63 @@
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+message("**** configuring KratosPetscSolversApplication ****")
+
+######### add include directory here
+include_directories( ${CMAKE_SOURCE_DIR}/external_libraries )
+include_directories( ${CMAKE_SOURCE_DIR}/kratos )
+include_directories( ${CMAKE_SOURCE_DIR}/applications )
+include_directories( ${CMAKE_SOURCE_DIR}/applications/distributed_builders_application )
+#######################################################################
+
+######### add additional cmake module path
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/applications/distributed_builders_application/custom_cmake_modules")
+#######################################################################
+
+######### add additional libraries
+IF(DEFINED PETSC_DIR)
+    SET(PETSC_EXECUTABLE_RUNS "YES") #skip the test
+    FIND_PACKAGE(PETSc REQUIRED)
+    IF(NOT ${PETSC_FOUND})
+        message(ERROR "PETSc is required for PetscSolversApplication")
+    ENDIF()
+    INCLUDE_DIRECTORIES(${PETSC_INCLUDES})
+ENDIF()
+
+
+## generate variables with the sources
+set( KRATOS_PETSC_SOLVERS_APPLICATION_SOURCES     
+	${CMAKE_CURRENT_SOURCE_DIR}/petsc_solvers_application.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/custom_python/add_linear_solvers_to_python.cpp
+	${CMAKE_CURRENT_SOURCE_DIR}/custom_python/petsc_solvers_python_application.cpp
+)
+
+
+###############################################################
+## define library Kratos which defines the basic python interface
+add_library(KratosPetscSolversApplication SHARED ${KRATOS_PETSC_SOLVERS_APPLICATION_SOURCES})
+
+target_link_libraries(KratosPetscSolversApplication KratosCore)
+target_link_libraries(KratosPetscSolversApplication KratosDistributedBuildersApplication) # I linked it for temporary here. WHen I remake the petsc_space.h (remove the petsc_space.cpp), I will delete this; remove this after moving SCALING_FACTOR_* to StructuralApplication
+target_link_libraries(KratosPetscSolversApplication ${PETSC_LIBRARIES})
+target_link_libraries(KratosPetscSolversApplication ${MPI_CXX_LIBRARY} ${MPI_C_LIBRARY})
+set_target_properties(KratosPetscSolversApplication PROPERTIES PREFIX "")
+install(TARGETS KratosPetscSolversApplication DESTINATION libs )
+
+# get_property(inc_dirs DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+# message("TestApplication subdir inc_dirs = ${inc_dirs}")
+
+# changing the .dll suffix to .pyd 
+if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+	set_target_properties(KratosPetscSolversApplication PROPERTIES SUFFIX .pyd)
+endif(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+
+if(${INSTALL_PYTHON_FILES} MATCHES ON)
+  get_filename_component (CURRENT_DIR_NAME ${CMAKE_CURRENT_SOURCE_DIR} NAME)
+  install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/python_scripts DESTINATION applications/${CURRENT_DIR_NAME}  FILES_MATCHING PATTERN "*.py"  PATTERN ".svn" EXCLUDE)
+endif(${INSTALL_PYTHON_FILES} MATCHES ON)
+
+# get_property(inc_dirs DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+# message("TestApplication subdir inc_dirs = ${inc_dirs}")
+
+# Add to the KratosMultiphysics Python module
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/PetscSolversApplication.py" DESTINATION KratosMultiphysics )
