@@ -42,13 +42,13 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 //   Project Name:        Kratos
 //   Last Modified by:    $Author: hbui $
-//   Date:                $Date: 22 Jan 2016 $
+//   Date:                $Date: 23 Jan 2017 $
 //   Revision:            $Revision: 1.0 $
 //
 //
 
-#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED )
-#define  KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED
+#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_LU_WP_SOLVER_H_INCLUDED )
+#define  KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_LU_WP_SOLVER_H_INCLUDED
 
 // System includes
 #include <iostream>
@@ -57,9 +57,6 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // External includes
 #include "boost/smart_ptr.hpp"
-#include <boost/foreach.hpp>
-#include <boost/python.hpp>
-#include <boost/python/stl_iterator.hpp>
 #include "petscksp.h"
 
 // Project includes
@@ -75,14 +72,14 @@ namespace Kratos
 
 /**
 This class constructs Petsc solver with PCFIELDSPLIT preconditioner.
-This class assumes the provided DofSet is organized with contiguous tuple {ux,u_y,u_z}. Hence it shall only be used with the parallel block builder and solver.
+This class assumes the provided DofSet is organized with contiguous tuple {ux,uy,uz}, {l_ux,l_uy,l_uz} and the water pressure is single field. Hence it shall only be used with the parallel block builder and solver.
 */
 template<class TSparseSpaceType, class TDenseSpaceType>
-class PetscFieldSplit_UX_UY_UZ_Shield_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
+class PetscFieldSplit_U_LU_WP_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
 {
 public:
 
-    KRATOS_CLASS_POINTER_DEFINITION(PetscFieldSplit_UX_UY_UZ_Shield_Solver);
+    KRATOS_CLASS_POINTER_DEFINITION(PetscFieldSplit_U_LU_WP_Solver);
 
     typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> BaseType;
 
@@ -97,21 +94,18 @@ public:
     /**
      * Default Constructor
      */
-    PetscFieldSplit_UX_UY_UZ_Shield_Solver(boost::python::list& shield_nodes) : m_my_rank(0)
+    PetscFieldSplit_U_LU_WP_Solver() : m_my_rank(0), m_is_block(true)
     {
-        typedef boost::python::stl_input_iterator<int> iterator_value_type;
-        BOOST_FOREACH(const iterator_value_type::value_type& node_id,
-                      std::make_pair(iterator_value_type(shield_nodes), // begin
-                      iterator_value_type() ) ) // end
-        {
-            m_shield_nodes.insert(node_id);
-        }
+    }
+
+    PetscFieldSplit_U_LU_WP_Solver(bool is_block) : m_my_rank(0), m_is_block(is_block)
+    {
     }
 
     /**
      * Destructor
      */
-    virtual ~PetscFieldSplit_UX_UY_UZ_Shield_Solver()
+    virtual ~PetscFieldSplit_U_LU_WP_Solver()
     {
     }
 
@@ -149,14 +143,12 @@ public:
 //        KRATOS_WATCH(Istart)
 //        KRATOS_WATCH(Iend)
 
-        mIndexUX.clear();
-        mIndexUY.clear();
-        mIndexUZ.clear();
-        mIndexUShield.clear();
+        mIndexU.clear();
+        mIndexWP.clear();
         for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
                 dof_iterator != rdof_set.end(); ++dof_iterator)
         {
-            std::size_t node_id = dof_iterator->Id();
+//            std::size_t node_id = dof_iterator->Id();
             std::size_t row_id = dof_iterator->EquationId();
 
             if((row_id >= Istart) && (row_id < Iend))
@@ -166,33 +158,25 @@ public:
 //                    KRATOS_THROW_ERROR(std::logic_error, "The node does not exist in this partition. Probably data is consistent", "")
 
                 if(dof_iterator->GetVariable() == DISPLACEMENT_X)
-                {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUX.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
-                }
+                    mIndexU.push_back(row_id);
                 else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
-                {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUY.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
-                }
+                    mIndexU.push_back(row_id);
                 else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
-                {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUZ.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
-                }
+                    mIndexU.push_back(row_id);
+                else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_X)
+                    mIndexLU.push_back(row_id);
+                else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_Y)
+                    mIndexLU.push_back(row_id);
+                else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_Z)
+                    mIndexLU.push_back(row_id);
+                else if(dof_iterator->GetVariable() == WATER_PRESSURE)
+                    mIndexWP.push_back(row_id);
             }
         }
 
-        std::sort(mIndexUX.begin(), mIndexUX.end());
-        std::sort(mIndexUY.begin(), mIndexUY.end());
-        std::sort(mIndexUZ.begin(), mIndexUZ.end());
-        std::sort(mIndexUShield.begin(), mIndexUShield.end());
+        std::sort(mIndexU.begin(), mIndexU.end());
+        std::sort(mIndexLU.begin(), mIndexLU.end());
+        std::sort(mIndexWP.begin(), mIndexWP.end());
     }
 
     /**
@@ -206,17 +190,17 @@ public:
     virtual bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
     {
         Vec             r;             /* approx solution, RHS, A*x-b */
-        Mat             A_U, P_U, A_US, P_US;
-        KSP             ksp, ksp_U, ksp_US;               /* linear solver context */
-        KSP*            sub_ksp;      /* ksp's of the fieldsplit */
-        PC              pc;           /* preconditioner context */
-        IS              IS_ux, IS_uy, IS_uz, IS_us;   /* index set context */
+        KSP             ksp;               /* linear solver context */
+        PC              pc, pc_U_WP;           /* preconditioner context */
+        IS              IS_u, IS_wp, IS_u_wp, IS_lu;   /* index set context */
         PetscReal       norm_b, norm_r;     /* ||b||, ||b-Ax|| */
         IndexType       its;
-        IndexType       nsplits;
         PetscErrorCode  ierr;
         PetscScalar     v;
         MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        std::vector<IndexType> IndexU_WP;
+        KSP*            ksp_all, ksp_U_WP;
+        PetscInt        dummy;
 
         MPI_Comm_rank(Comm, &m_my_rank);
 
@@ -234,7 +218,7 @@ public:
         if(m_my_rank == 0)
             std::cout << "KSPCreate completed" << std::endl;
         #endif
-
+        
         /* 
             Set operators. Here the matrix that defines the linear system
             also serves as the preconditioning matrix.
@@ -268,54 +252,6 @@ public:
         #endif
 
         /* 
-            Set PC
-        */
-        ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
-        ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUX.size(), &mIndexUX[0], PETSC_COPY_VALUES, &IS_ux); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUY.size(), &mIndexUY[0], PETSC_COPY_VALUES, &IS_uy); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUZ.size(), &mIndexUZ[0], PETSC_COPY_VALUES, &IS_uz); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUShield.size(), &mIndexUShield[0], PETSC_COPY_VALUES, &IS_us); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "ux", IS_ux); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "uy", IS_uy); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "uz", IS_uz); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "u_shield", IS_us); CHKERRQ(ierr);
-
-        #ifdef DEBUG_SOLVER
-        if(m_my_rank == 0)
-        {
-            std::cout << "PCFIELDSPLIT completed" << std::endl;
-        }
-        std::cout << m_my_rank << ": mIndexUX.size(): " << mIndexUX.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUY.size(): " << mIndexUY.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUZ.size(): " << mIndexUZ.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUShield.size(): " << mIndexUShield.size() << std::endl;
-        #endif
-
-        /* 
-            Set block size for sub-matrix,
-        */
-//        ierr = PCFieldSplitGetSubKSP(pc, &nsplits, &sub_ksp); CHKERRQ(ierr);
-//        if(m_my_rank == 0)
-//            KRATOS_WATCH(nsplits)
-//        ksp_U = sub_ksp[0];
-//        ierr = KSPGetOperators(ksp_U, &A_U, &P_U); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(A_U, 3); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(P_U, 3); CHKERRQ(ierr);
-// 
-//        ksp_US = sub_ksp[1];
-//        ierr = KSPGetOperators(ksp_US, &A_US, &P_US); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(A_US, 3); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(P_US, 3); CHKERRQ(ierr);
-// 
-//        ierr = PetscFree(sub_ksp); CHKERRQ(ierr);
-
-        #ifdef DEBUG_SOLVER
-        if(m_my_rank == 0)
-            std::cout << "Set block size for sub-matrices completed" << std::endl;
-        #endif
-
-        /* 
             Set runtime options, e.g.,
                 -ksp_type <type> -pc_type <type> -ksp_monitor -ksp_rtol <rtol>
             These options will override those specified above as long as
@@ -327,6 +263,69 @@ public:
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPSetFromOptions completed" << std::endl;
+        #endif
+
+        /* The fieldsplit is organized as {{u, wp}, lu} */
+        /* 
+            Set PC for outer fieldsplit
+        */
+        ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
+        ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRQ(ierr);
+        IndexU_WP = mIndexU;
+        IndexU_WP.insert(IndexU_WP.end(), mIndexWP.begin(), mIndexWP.end());
+        std::sort(IndexU_WP.begin(), IndexU_WP.end());
+        ierr = ISCreateGeneral(Comm, IndexU_WP.size(), &IndexU_WP[0], PETSC_COPY_VALUES, &IS_u_wp); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(Comm, mIndexLU.size(), &mIndexLU[0], PETSC_COPY_VALUES, &IS_lu); CHKERRQ(ierr);
+        if(m_is_block)
+        {
+//            ierr = ISSetBlockSize(IS_u_wp, 4); CHKERRQ(ierr);
+            ierr = ISSetBlockSize(IS_lu, 3); CHKERRQ(ierr);
+            if(m_my_rank == 0)
+                std::cout << "The block size is set for the sub-matrices LU" << std::endl;
+        }
+        ierr = PCFieldSplitSetIS(pc, "uwp", IS_u_wp); CHKERRQ(ierr);
+        ierr = PCFieldSplitSetIS(pc, "lu", IS_lu); CHKERRQ(ierr);
+        ierr = KSPSetUp(ksp); CHKERRQ(ierr);
+
+        /* 
+            Set PC for inner fieldsplit
+        */
+        /* firstly rebuild the relative local index */
+        std::vector<IndexType> LocalIndexU(mIndexU.size());
+        std::vector<IndexType> LocalIndexWP(mIndexWP.size());
+        std::map<IndexType, IndexType> index_map;
+        for(std::size_t i = 0; i < IndexU_WP.size(); ++i)
+            index_map[IndexU_WP[i]] = i;
+        for(std::size_t i = 0; i < mIndexU.size(); ++i)
+            LocalIndexU[i] = index_map[mIndexU[i]];
+        for(std::size_t i = 0; i < mIndexWP.size(); ++i)
+            LocalIndexWP[i] = index_map[mIndexWP[i]];
+
+        /* compute the nested IS */
+        ierr = PCFieldSplitGetSubKSP(pc, &dummy, &ksp_all); CHKERRQ(ierr);
+        ksp_U_WP = ksp_all[0];
+        ierr = ISCreateGeneral(Comm, LocalIndexU.size(), &LocalIndexU[0], PETSC_COPY_VALUES, &IS_u); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(Comm, LocalIndexWP.size(), &LocalIndexWP[0], PETSC_COPY_VALUES, &IS_wp); CHKERRQ(ierr);
+        if(m_is_block)
+        {
+            ierr = ISSetBlockSize(IS_u, 3); CHKERRQ(ierr);
+            ierr = ISSetBlockSize(IS_wp, 1); CHKERRQ(ierr);
+            if(m_my_rank == 0)
+                std::cout << "The block size is set for the sub-matrices U and WP" << std::endl;
+        }
+        ierr = KSPGetPC(ksp_U_WP, &pc_U_WP); CHKERRQ(ierr);
+//        ierr = PCSetType(pc_U_WP, PCFIELDSPLIT); CHKERRQ(ierr);
+        ierr = PCFieldSplitSetIS(pc_U_WP, "u", IS_u); CHKERRQ(ierr);
+        ierr = PCFieldSplitSetIS(pc_U_WP, "wp", IS_wp); CHKERRQ(ierr);
+
+        #ifdef DEBUG_SOLVER
+        if(m_my_rank == 0)
+        {
+            std::cout << "PCFIELDSPLIT completed" << std::endl;
+        }
+        std::cout << m_my_rank << ": mIndexLU.size(): " << mIndexLU.size() << std::endl;
+        std::cout << m_my_rank << ": LocalIndexU.size(): " << LocalIndexU.size() << std::endl;
+        std::cout << m_my_rank << ": LocalIndexWP.size(): " << LocalIndexWP.size() << std::endl;
         #endif
 
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
@@ -408,7 +407,7 @@ public:
     virtual void PrintInfo(std::ostream& rOStream) const
     {
         if(m_my_rank == 0)
-            rOStream << "PetscFieldSplit_UX_UY_UZ_Shield solver finished.";
+            rOStream << "PetscFieldSplit_U_LU_WP solver finished.";
     }
 
     /**
@@ -421,16 +420,15 @@ public:
 private:
 
     int m_my_rank;
-    std::set<std::size_t> m_shield_nodes;
-    std::vector<IndexType> mIndexUX;
-    std::vector<IndexType> mIndexUY;
-    std::vector<IndexType> mIndexUZ;
-    std::vector<IndexType> mIndexUShield;
+    bool m_is_block;
+    std::vector<IndexType> mIndexU;
+    std::vector<IndexType> mIndexLU;
+    std::vector<IndexType> mIndexWP;
 
     /**
      * Assignment operator.
      */
-    PetscFieldSplit_UX_UY_UZ_Shield_Solver& operator=(const PetscFieldSplit_UX_UY_UZ_Shield_Solver& Other);    
+    PetscFieldSplit_U_LU_WP_Solver& operator=(const PetscFieldSplit_U_LU_WP_Solver& Other);    
 };
 
 
@@ -438,7 +436,7 @@ private:
  * input stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_UX_UY_UZ_Shield_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_U_LU_WP_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     return rIStream;
 }
@@ -447,7 +445,7 @@ inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_UX_UY_
  * output stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_UX_UY_UZ_Shield_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_U_LU_WP_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     rThis.PrintInfo(rOStream);
     rOStream << std::endl;
@@ -461,5 +459,5 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_
 
 #undef DEBUG_SOLVER
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED  defined 
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_WP_SOLVER_H_INCLUDED  defined 
 

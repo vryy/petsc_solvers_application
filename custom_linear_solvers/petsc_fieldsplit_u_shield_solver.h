@@ -448,6 +448,23 @@ public:
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                           Check solution and clean up
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+        /*
+            Check if the linear solver converged
+        */
+        KSPConvergedReason reason;
+        ierr = KSPGetConvergedReason(ksp, &reason); // CHKERRQ(ierr);
+        if(reason < 0)
+        {
+            KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason =", reason)
+        }
+        else
+        {
+            #ifdef DEBUG_SOLVER
+            if(m_my_rank == 0)
+                std::cout << "KSPSolve converged with reason = " << reason << std::endl;
+            #endif
+        }
+
         /* 
             Check the error
         */

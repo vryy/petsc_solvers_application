@@ -19,6 +19,7 @@
 #include "custom_linear_solvers/petsc_solver.h"
 #include "custom_linear_solvers/petsc_gamg_elasticity_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_u_wp_solver.h"
+#include "custom_linear_solvers/petsc_fieldsplit_u_lu_wp_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_u_lu_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_ux_uy_uz_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_ux_uy_uz_shield_solver.h"
@@ -26,6 +27,7 @@
 #include "custom_linear_solvers/petsc_fieldsplit_u_shield_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_u_shield_wp_solver.h"
 #include "custom_linear_solvers/petsc_fieldsplit_u_nested_shield_wp_solver.h"
+#include "custom_linear_solvers/petsc_fieldsplit_v_p_solver.h"
 #include "custom_linear_solvers/petsc_scaling_wrapper.h"
 #include "custom_linear_solvers/petsc_u_wp_scaling_wrapper.h"
 #include "distributed_builders_application/custom_utilities/PETSc_Wrappers.h"
@@ -75,6 +77,13 @@ namespace Python
         typedef PetscFieldSplit_U_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_WP_SolverType;
         class_<PetscFieldSplit_U_WP_SolverType, PetscFieldSplit_U_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_WP_Solver", init<>())
+        .def(init<bool>())
+        .def(self_ns::str(self))
+        ;
+
+        typedef PetscFieldSplit_U_LU_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_LU_WP_SolverType;
+        class_<PetscFieldSplit_U_LU_WP_SolverType, PetscFieldSplit_U_LU_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
+        ("PETScFieldSplit_U_LU_WP_Solver", init<>())
         .def(init<bool>())
         .def(self_ns::str(self))
         ;
@@ -136,6 +145,12 @@ namespace Python
         .def(self_ns::str(self))
         ;
 
+        typedef PetscFieldSplit_V_P_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_V_P_SolverType;
+        class_<PetscFieldSplit_V_P_SolverType, PetscFieldSplit_V_P_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
+        ("PetscFieldSplit_V_P_Solver", init<>())
+        .def(init<bool, int>())
+        .def(self_ns::str(self))
+        ;
     }
 
 }  // namespace Python.

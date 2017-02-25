@@ -66,6 +66,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "linear_solvers/linear_solver.h"
 
 #define DEBUG_SOLVER
+#define VIEW_SUB_MATRICES
 
 namespace Kratos
 {
@@ -136,7 +137,7 @@ public:
     {
         // TODO collect the equation id for displacements and water pressure in the local process
         IndexType       Istart, Iend;
-        MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        MPI_Comm        comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscErrorCode  ierr;
 
         ierr = MatGetOwnershipRange(rA.Get(), &Istart, &Iend); CHKERRV(ierr);
@@ -191,9 +192,13 @@ public:
         IndexType       its;
         PetscErrorCode  ierr;
         PetscScalar     v;
-        MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        MPI_Comm        comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        PetscViewer     viewer;
+        #ifdef VIEW_SUB_MATRICES
+        Mat             A00, A01, A10, A11;
+        #endif
 
-        MPI_Comm_rank(Comm, &m_my_rank);
+        MPI_Comm_rank(comm, &m_my_rank);
 
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                 Create the linear solver and set various options
@@ -201,7 +206,7 @@ public:
         /* 
             Create linear solver context
         */
-        ierr = KSPCreate(Comm, &ksp); CHKERRQ(ierr);
+        ierr = KSPCreate(comm, &ksp); CHKERRQ(ierr);
         if(ierr != 0)
             KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPCreate, error code =", ierr)
 
@@ -247,8 +252,8 @@ public:
         */
         ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
         ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexU.size(), &mIndexU[0], PETSC_COPY_VALUES, &IS_u); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexLU.size(), &mIndexLU[0], PETSC_COPY_VALUES, &IS_lu); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(comm, mIndexU.size(), &mIndexU[0], PETSC_COPY_VALUES, &IS_u); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(comm, mIndexLU.size(), &mIndexLU[0], PETSC_COPY_VALUES, &IS_lu); CHKERRQ(ierr);
         if(m_is_block)
         {
             ierr = ISSetBlockSize(IS_u, 3); CHKERRQ(ierr); // set block size for the u block
@@ -258,6 +263,33 @@ public:
         }
         ierr = PCFieldSplitSetIS(pc, "u", IS_u); CHKERRQ(ierr);
         ierr = PCFieldSplitSetIS(pc, "lu", IS_lu); CHKERRQ(ierr);
+
+        #ifdef VIEW_SUB_MATRICES
+        ierr = MatGetSubMatrix(rA.Get(), IS_u, IS_u,   MAT_INITIAL_MATRIX, &A00); CHKERRQ(ierr);
+        ierr = MatGetSubMatrix(rA.Get(), IS_u, IS_lu,  MAT_INITIAL_MATRIX, &A01); CHKERRQ(ierr);
+        ierr = MatGetSubMatrix(rA.Get(), IS_lu, IS_u,  MAT_INITIAL_MATRIX, &A10); CHKERRQ(ierr);
+        ierr = MatGetSubMatrix(rA.Get(), IS_lu, IS_lu, MAT_INITIAL_MATRIX, &A11); CHKERRQ(ierr);
+
+        ierr = PetscViewerASCIIOpen(comm, "A00.m", &viewer); CHKERRQ(ierr);
+        ierr = PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB); CHKERRQ(ierr);
+        ierr = MatView(A00, viewer); CHKERRQ(ierr);
+        ierr = PetscViewerDestroy(&viewer); CHKERRQ(ierr);
+
+        ierr = PetscViewerASCIIOpen(comm, "A01.m", &viewer); CHKERRQ(ierr);
+        ierr = PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB); CHKERRQ(ierr);
+        ierr = MatView(A01, viewer); CHKERRQ(ierr);
+        ierr = PetscViewerDestroy(&viewer); CHKERRQ(ierr);
+
+        ierr = PetscViewerASCIIOpen(comm, "A10.m", &viewer); CHKERRQ(ierr);
+        ierr = PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB); CHKERRQ(ierr);
+        ierr = MatView(A10, viewer); CHKERRQ(ierr);
+        ierr = PetscViewerDestroy(&viewer); CHKERRQ(ierr);
+
+        ierr = PetscViewerASCIIOpen(comm, "A11.m", &viewer); CHKERRQ(ierr);
+        ierr = PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB); CHKERRQ(ierr);
+        ierr = MatView(A11, viewer); CHKERRQ(ierr);
+        ierr = PetscViewerDestroy(&viewer); CHKERRQ(ierr);
+        #endif
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
@@ -297,6 +329,23 @@ public:
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                           Check solution and clean up
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
+        /*
+            Check if the linear solver converged
+        */
+        KSPConvergedReason reason;
+        ierr = KSPGetConvergedReason(ksp, &reason); // CHKERRQ(ierr);
+        if(reason < 0)
+        {
+            KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason =", reason)
+        }
+        else
+        {
+            #ifdef DEBUG_SOLVER
+            if(m_my_rank == 0)
+                std::cout << "KSPSolve converged with reason = " << reason << std::endl;
+            #endif
+        }
+
         /* 
             Check the error
         */
@@ -312,7 +361,7 @@ public:
             print statement from all processes that share a communicator.
             An alternative is PetscFPrintf(), which prints to a file.
         */
-//        ierr = PetscPrintf(Comm, "Norm of error %f iterations %d\n", norm_r/norm_b, its); CHKERRQ(ierr);
+//        ierr = PetscPrintf(comm, "Norm of error %f iterations %d\n", norm_r/norm_b, its); CHKERRQ(ierr);
 
         /*
             Free work space.  All PETSc objects should be destroyed when they
@@ -393,6 +442,7 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_
 
 }  // namespace Kratos.
 
+#undef VIEW_SUB_MATRICES
 #undef DEBUG_SOLVER
 
 #endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_LU_SOLVER_H_INCLUDED  defined 
