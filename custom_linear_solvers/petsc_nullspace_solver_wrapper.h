@@ -5,13 +5,13 @@ see petsc_solvers_application/LICENSE.txt
 //
 //   Project Name:        Kratos
 //   Last Modified by:    $Author: hbui $
-//   Date:                $Date: 15 Jan 2016 $
+//   Date:                $Date: 29 May 2017 $
 //   Revision:            $Revision: 1.1 $
 //
 //
 
-#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_SCALING_WRAPPER_H_INCLUDED )
-#define  KRATOS_PETSC_SOLVERS_APP_PETSC_SCALING_WRAPPER_H_INCLUDED
+#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_NULLSPACE_SOLVER_WRAPPER_H_INCLUDED )
+#define  KRATOS_PETSC_SOLVERS_APP_PETSC_NULLSPACE_SOLVER_WRAPPER_H_INCLUDED
 
 // System includes
 #include <iostream>
@@ -29,16 +29,20 @@ see petsc_solvers_application/LICENSE.txt
 #include "linear_solvers/linear_solver.h"
 
 #define DEBUG_SOLVER
+#define TEST_NULLSPACE
 
 namespace Kratos
 {
 
+/*
+Solver wrapper to set the near nullspace to the matrix. This is particular useful for 3D elasticity and GAMG.
+*/
 template<class TSparseSpaceType, class TDenseSpaceType>
-class PetscScalingWrapper : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
+class PetscNullspaceSolverWrapper : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
 {
 public:
 
-    KRATOS_CLASS_POINTER_DEFINITION(PetscScalingWrapper);
+    KRATOS_CLASS_POINTER_DEFINITION(PetscNullspaceSolverWrapper);
 
     typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> BaseType;
 
@@ -55,14 +59,14 @@ public:
     /**
      * Default Constructor
      */
-    PetscScalingWrapper(typename BaseType::Pointer pLinearSolver) : m_my_rank(0), mpLinearSolver(pLinearSolver)
+    PetscNullspaceSolverWrapper(typename BaseType::Pointer pLinearSolver) : m_my_rank(0), mpLinearSolver(pLinearSolver)
     {
     }
 
     /**
      * Destructor
      */
-    virtual ~PetscScalingWrapper()
+    virtual ~PetscNullspaceSolverWrapper()
     {
     }
 
@@ -94,12 +98,61 @@ public:
         MPI_Comm Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         MPI_Comm_rank(Comm, &m_my_rank);
 
-        MatDiagonalScale(rA.Get(), mLeftScalingVect.Get(), mRightScalingVect.Get());
-        if(!mLeftScalingVect.IsNULL())
-            VecPointwiseMult(rB.Get(), mLeftScalingVect.Get(), rB.Get());
+        PetscErrorCode  ierr;
+        MatNullSpace    matnull;
+        Vec             vec_coords;
+        PetscScalar     *c;
 
-        if(mpLinearSolver->AdditionalPhysicalDataIsNeeded())
-            mpLinearSolver->ProvideAdditionalData(rA, rX, rB, rdof_set, r_model_part);
+        ierr = VecCreate(Comm, &vec_coords); //CHKERRQ(ierr);
+////        ierr = VecSetBlockSize(vec_coords, 3); //CHKERRQ(ierr);
+        ierr = VecSetSizes(vec_coords, static_cast<PetscInt>(rdof_set.size()), PETSC_DECIDE); //CHKERRQ(ierr);
+        ierr = VecSetType(vec_coords, VECMPI);
+//        ierr = VecSetUp(vec_coords); //CHKERRQ(ierr);
+        ierr = VecGetArray(vec_coords, &c); //CHKERRQ(ierr);
+
+        std::size_t i = 0, node_id;
+        typename ModelPart::NodesContainerType nodes = r_model_part.Nodes();
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                c[i++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                c[i++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                c[i++] = nodes[node_id].Z();
+            }
+        }
+
+        ierr = VecRestoreArray(vec_coords, &c); //CHKERRQ(ierr);
+        ierr = MatNullSpaceCreateRigidBody(vec_coords, &matnull); //CHKERRQ(ierr);
+
+        #ifdef TEST_NULLSPACE
+        // test if the computed nullspace is really the nullspace of the system
+        PetscBool isNull;
+        MatNullSpaceTest(matnull, rA.Get(), &isNull);
+        if(m_my_rank == 0)
+        {
+            if(!isNull)
+                std::cout << "The computed nullspace does not pass MatNullSpaceTest" << std::endl;
+            else
+                std::cout << "The computed nullspace passes MatNullSpaceTest" << std::endl;
+        }
+        #endif
+
+        ierr = MatSetNearNullSpace(rA.Get(), matnull); //CHKERRQ(ierr);
+        ierr = MatNullSpaceDestroy(&matnull); //CHKERRQ(ierr);
+        ierr = VecDestroy(&vec_coords); //CHKERRQ(ierr);
+        if(m_my_rank == 0)
+            std::cout << "PetscNullspaceSolverWrapper::" << __FUNCTION__ << ", the near nullspace is set" << std::endl;
+
+        mpLinearSolver->ProvideAdditionalData(rA, rX, rB, rdof_set, r_model_part);
     }
 
     /**
@@ -112,13 +165,9 @@ public:
      */
     virtual bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
     {
-        bool solved = mpLinearSolver->Solve(rA, rX, rB);
+        bool solve_flag = mpLinearSolver->Solve(rA, rX, rB);
 
-        // rescale back the solution
-        if(!mRightScalingVect.IsNULL())
-            VecPointwiseMult(rX.Get(), mRightScalingVect.Get(), rX.Get());
-
-        return solved;
+        return solve_flag;
     }
 
     /**
@@ -141,7 +190,7 @@ public:
     {
         mpLinearSolver->PrintInfo(rOStream);
         if(m_my_rank == 0)
-            rOStream << "Petsc scaling wrapper finished.";
+            rOStream << "Petsc nullspace solver wrapper finished.";
     }
 
     /**
@@ -153,8 +202,6 @@ public:
     }
 
 protected:
-    VectorType mLeftScalingVect;
-    VectorType mRightScalingVect;
     int m_my_rank;
 
 private:
@@ -164,7 +211,7 @@ private:
     /**
      * Assignment operator.
      */
-    PetscScalingWrapper& operator=(const PetscScalingWrapper& Other);    
+    PetscNullspaceSolverWrapper& operator=(const PetscNullspaceSolverWrapper& Other);    
 };
 
 
@@ -172,7 +219,7 @@ private:
  * input stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::istream& operator >> (std::istream& rIStream, PetscNullspaceSolverWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     return rIStream;
 }
@@ -181,7 +228,7 @@ inline std::istream& operator >> (std::istream& rIStream, PetscScalingWrapper<TS
  * output stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::ostream& operator << (std::ostream& rOStream, const PetscNullspaceSolverWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     rThis.PrintInfo(rOStream);
     rOStream << std::endl;
@@ -194,6 +241,7 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscScalingWrap
 }  // namespace Kratos.
 
 #undef DEBUG_SOLVER
+#undef TEST_NULLSPACE
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_SCALING_WRAPPER_H_INCLUDED  defined 
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_NULLSPACE_SOLVER_WRAPPER_H_INCLUDED  defined 
 

@@ -1,42 +1,5 @@
 /*
-==============================================================================
-KratosStructuralApplication
-A library based on:
-Kratos
-A General Purpose Software for Multi-Physics Finite Element Analysis
-Version 1.0 (Released on march 05, 2007).
-
-Copyright 2007
-Pooyan Dadvand, Riccardo Rossi, Janosch Stascheit, Felix Nagel
-pooyan@cimne.upc.edu
-rrossi@cimne.upc.edu
-- CIMNE (International Center for Numerical Methods in Engineering),
-Gran Capita' s/n, 08034 Barcelona, Spain
-
-
-Permission is hereby granted, free  of charge, to any person obtaining
-a  copy  of this  software  and  associated  documentation files  (the
-"Software"), to  deal in  the Software without  restriction, including
-without limitation  the rights to  use, copy, modify,  merge, publish,
-distribute,  sublicense and/or  sell copies  of the  Software,  and to
-permit persons to whom the Software  is furnished to do so, subject to
-the following condition:
-
-Distribution of this code for  any  commercial purpose  is permissible
-ONLY BY DIRECT ARRANGEMENT WITH THE COPYRIGHT OWNERS.
-
-The  above  copyright  notice  and  this permission  notice  shall  be
-included in all copies or substantial portions of the Software.
-
-THE  SOFTWARE IS  PROVIDED  "AS  IS", WITHOUT  WARRANTY  OF ANY  KIND,
-EXPRESS OR  IMPLIED, INCLUDING  BUT NOT LIMITED  TO THE  WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT  SHALL THE AUTHORS OR COPYRIGHT HOLDERS  BE LIABLE FOR ANY
-CLAIM, DAMAGES OR  OTHER LIABILITY, WHETHER IN AN  ACTION OF CONTRACT,
-TORT  OR OTHERWISE, ARISING  FROM, OUT  OF OR  IN CONNECTION  WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
+see petsc_solvers_application/LICENSE.txt
 */
 
 //
@@ -66,6 +29,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "linear_solvers/linear_solver.h"
 
 #define DEBUG_SOLVER
+#define APPLY_NEAR_NULLSPACE
+#define APPLY_COORDINATES
 
 namespace Kratos
 {
@@ -167,6 +132,70 @@ public:
                     mIndexWP.push_back(row_id);
             }
         }
+
+        #if defined(APPLY_NEAR_NULLSPACE) || defined(APPLY_COORDINATES)
+        std::size_t i, node_id;
+        typename ModelPart::NodesContainerType nodes = r_model_part.Nodes();
+        #endif
+
+        #ifdef APPLY_NEAR_NULLSPACE
+        // construct the near nullspace of the solid block if required
+        Vec             vec_coords;
+        PetscScalar     *c;
+
+        ierr = VecCreate(Comm, &vec_coords); //CHKERRQ(ierr);
+        ierr = VecSetBlockSize(vec_coords, 3); //CHKERRQ(ierr);
+        ierr = VecSetSizes(vec_coords, static_cast<PetscInt>(rdof_set.size()), PETSC_DECIDE); //CHKERRQ(ierr);
+        ierr = VecSetType(vec_coords, VECMPI);
+//        ierr = VecSetUp(vec_coords); //CHKERRQ(ierr);
+        ierr = VecGetArray(vec_coords, &c); //CHKERRQ(ierr);
+
+        i = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                c[i++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                c[i++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                c[i++] = nodes[node_id].Z();
+            }
+        }
+
+        ierr = VecRestoreArray(vec_coords, &c); //CHKERRQ(ierr);
+        ierr = MatNullSpaceCreateRigidBody(vec_coords, &mmatnull); //CHKERRQ(ierr);
+        ierr = VecDestroy(&vec_coords); //CHKERRQ(ierr);
+        #endif
+
+        #ifdef APPLY_COORDINATES
+        if(mcoords.size() != rdof_set.size())
+            mcoords.resize(rdof_set.size());
+        i = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                mcoords[i++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                mcoords[i++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                mcoords[i++] = nodes[node_id].Z();
+            }
+        }
+        #endif
     }
 
     /**
@@ -205,7 +234,7 @@ public:
         if(m_my_rank == 0)
             std::cout << "KSPCreate completed" << std::endl;
         #endif
-        
+
         /* 
             Set operators. Here the matrix that defines the linear system
             also serves as the preconditioning matrix.
@@ -276,6 +305,40 @@ public:
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPSetFromOptions completed" << std::endl;
+        #endif
+
+        ierr = KSPSetUp(ksp); CHKERRQ(ierr);
+
+        #ifdef DEBUG_SOLVER
+        if(m_my_rank == 0)
+            std::cout << "KSPSetUp completed" << std::endl;
+        #endif
+
+        #if defined(APPLY_NEAR_NULLSPACE) || defined(APPLY_COORDINATES)
+        KSP*            ksp_all, ksp_U;
+        PetscInt        nsplits; // should be 2
+        Mat             A00;
+
+        ierr = PCFieldSplitGetSubKSP(pc, &nsplits, &ksp_all); CHKERRQ(ierr);
+//        KRATOS_WATCH(nsplits)
+        ksp_U = ksp_all[0];
+        #endif
+
+        #ifdef APPLY_NEAR_NULLSPACE
+        ierr = KSPGetOperators(ksp_U, &A00, PETSC_NULL); CHKERRQ(ierr);
+        ierr = MatSetNearNullSpace(A00, mmatnull); CHKERRQ(ierr);
+        ierr = MatNullSpaceDestroy(&mmatnull); CHKERRQ(ierr);
+//        mmatnull = PETSC_NULL;
+        if(m_my_rank == 0)
+            std::cout << "PetscFieldSplit_U_WP_Solver::" << __FUNCTION__ << ", the near nullspace for A00 is set" << std::endl;
+        #endif
+
+        #ifdef APPLY_COORDINATES
+        PC              pc_U;
+        ierr = KSPGetPC(ksp_U, &pc_U); CHKERRQ(ierr);
+        PCSetCoordinates(pc_U, 3, static_cast<PetscInt>(mcoords.size()), &mcoords[0]);
+        if(m_my_rank == 0)
+            std::cout << "PetscFieldSplit_U_WP_Solver::" << __FUNCTION__ << ", PCSetCoordinates for A00 is set" << std::endl;
         #endif
 
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
@@ -374,6 +437,14 @@ private:
     std::vector<IndexType> mIndexU;
     std::vector<IndexType> mIndexWP;
 
+    #ifdef APPLY_NEAR_NULLSPACE
+    MatNullSpace    mmatnull;
+    #endif
+
+    #ifdef APPLY_COORDINATES
+    std::vector<PetscReal> mcoords;
+    #endif
+
     /**
      * Assignment operator.
      */
@@ -407,6 +478,8 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_
 }  // namespace Kratos.
 
 #undef DEBUG_SOLVER
+#undef APPLY_NEAR_NULLSPACE
+#undef APPLY_COORDINATES
 
 #endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_WP_SOLVER_H_INCLUDED  defined 
 

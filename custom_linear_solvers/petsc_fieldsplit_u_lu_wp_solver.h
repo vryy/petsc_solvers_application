@@ -1,42 +1,5 @@
 /*
-==============================================================================
-KratosStructuralApplication
-A library based on:
-Kratos
-A General Purpose Software for Multi-Physics Finite Element Analysis
-Version 1.0 (Released on march 05, 2007).
-
-Copyright 2007
-Pooyan Dadvand, Riccardo Rossi, Janosch Stascheit, Felix Nagel
-pooyan@cimne.upc.edu
-rrossi@cimne.upc.edu
-- CIMNE (International Center for Numerical Methods in Engineering),
-Gran Capita' s/n, 08034 Barcelona, Spain
-
-
-Permission is hereby granted, free  of charge, to any person obtaining
-a  copy  of this  software  and  associated  documentation files  (the
-"Software"), to  deal in  the Software without  restriction, including
-without limitation  the rights to  use, copy, modify,  merge, publish,
-distribute,  sublicense and/or  sell copies  of the  Software,  and to
-permit persons to whom the Software  is furnished to do so, subject to
-the following condition:
-
-Distribution of this code for  any  commercial purpose  is permissible
-ONLY BY DIRECT ARRANGEMENT WITH THE COPYRIGHT OWNERS.
-
-The  above  copyright  notice  and  this permission  notice  shall  be
-included in all copies or substantial portions of the Software.
-
-THE  SOFTWARE IS  PROVIDED  "AS  IS", WITHOUT  WARRANTY  OF ANY  KIND,
-EXPRESS OR  IMPLIED, INCLUDING  BUT NOT LIMITED  TO THE  WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT  SHALL THE AUTHORS OR COPYRIGHT HOLDERS  BE LIABLE FOR ANY
-CLAIM, DAMAGES OR  OTHER LIABILITY, WHETHER IN AN  ACTION OF CONTRACT,
-TORT  OR OTHERWISE, ARISING  FROM, OUT  OF OR  IN CONNECTION  WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
+see petsc_solvers_application/LICENSE.txt
 */
 
 //
@@ -139,11 +102,14 @@ public:
         MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscErrorCode  ierr;
 
+        MPI_Comm_rank(Comm, &m_my_rank);
+
         ierr = MatGetOwnershipRange(rA.Get(), &Istart, &Iend); CHKERRV(ierr);
 //        KRATOS_WATCH(Istart)
 //        KRATOS_WATCH(Iend)
 
         mIndexU.clear();
+        mIndexLU.clear();
         mIndexWP.clear();
         for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
                 dof_iterator != rdof_set.end(); ++dof_iterator)
@@ -158,25 +124,43 @@ public:
 //                    KRATOS_THROW_ERROR(std::logic_error, "The node does not exist in this partition. Probably data is consistent", "")
 
                 if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+                {
                     mIndexU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+                {
                     mIndexU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+                {
                     mIndexU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_X)
+                {
                     mIndexLU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_Y)
+                {
                     mIndexLU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_Z)
+                {
                     mIndexLU.push_back(row_id);
+                }
                 else if(dof_iterator->GetVariable() == WATER_PRESSURE)
+                {
                     mIndexWP.push_back(row_id);
+                }
             }
         }
 
         std::sort(mIndexU.begin(), mIndexU.end());
         std::sort(mIndexLU.begin(), mIndexLU.end());
         std::sort(mIndexWP.begin(), mIndexWP.end());
+
+        std::cout << m_my_rank << ": P: mIndexU.size(): " << mIndexU.size() << std::endl;
+        std::cout << m_my_rank << ": P: mIndexLU.size(): " << mIndexLU.size() << std::endl;
+        std::cout << m_my_rank << ": P: mIndexWP.size(): " << mIndexWP.size() << std::endl;
     }
 
     /**
@@ -279,9 +263,9 @@ public:
         if(m_is_block)
         {
 //            ierr = ISSetBlockSize(IS_u_wp, 4); CHKERRQ(ierr);
-            ierr = ISSetBlockSize(IS_lu, 3); CHKERRQ(ierr);
+//            ierr = ISSetBlockSize(IS_lu, 3); CHKERRQ(ierr);
             if(m_my_rank == 0)
-                std::cout << "The block size is set for the sub-matrices LU" << std::endl;
+                std::cout << "The block size is not set for the sub-matrices LU" << std::endl;
         }
         ierr = PCFieldSplitSetIS(pc, "uwp", IS_u_wp); CHKERRQ(ierr);
         ierr = PCFieldSplitSetIS(pc, "lu", IS_lu); CHKERRQ(ierr);
@@ -323,7 +307,9 @@ public:
         {
             std::cout << "PCFIELDSPLIT completed" << std::endl;
         }
-        std::cout << m_my_rank << ": mIndexLU.size(): " << mIndexLU.size() << std::endl;
+//        std::cout << m_my_rank << ": mIndexU.size(): " << mIndexU.size() << std::endl;
+//        std::cout << m_my_rank << ": mIndexLU.size(): " << mIndexLU.size() << std::endl;
+//        std::cout << m_my_rank << ": mIndexWP.size(): " << mIndexWP.size() << std::endl;
         std::cout << m_my_rank << ": LocalIndexU.size(): " << LocalIndexU.size() << std::endl;
         std::cout << m_my_rank << ": LocalIndexWP.size(): " << LocalIndexWP.size() << std::endl;
         #endif

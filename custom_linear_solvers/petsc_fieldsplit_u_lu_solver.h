@@ -1,42 +1,5 @@
 /*
-==============================================================================
-KratosStructuralApplication
-A library based on:
-Kratos
-A General Purpose Software for Multi-Physics Finite Element Analysis
-Version 1.0 (Released on march 05, 2007).
-
-Copyright 2007
-Pooyan Dadvand, Riccardo Rossi, Janosch Stascheit, Felix Nagel
-pooyan@cimne.upc.edu
-rrossi@cimne.upc.edu
-- CIMNE (International Center for Numerical Methods in Engineering),
-Gran Capita' s/n, 08034 Barcelona, Spain
-
-
-Permission is hereby granted, free  of charge, to any person obtaining
-a  copy  of this  software  and  associated  documentation files  (the
-"Software"), to  deal in  the Software without  restriction, including
-without limitation  the rights to  use, copy, modify,  merge, publish,
-distribute,  sublicense and/or  sell copies  of the  Software,  and to
-permit persons to whom the Software  is furnished to do so, subject to
-the following condition:
-
-Distribution of this code for  any  commercial purpose  is permissible
-ONLY BY DIRECT ARRANGEMENT WITH THE COPYRIGHT OWNERS.
-
-The  above  copyright  notice  and  this permission  notice  shall  be
-included in all copies or substantial portions of the Software.
-
-THE  SOFTWARE IS  PROVIDED  "AS  IS", WITHOUT  WARRANTY  OF ANY  KIND,
-EXPRESS OR  IMPLIED, INCLUDING  BUT NOT LIMITED  TO THE  WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT  SHALL THE AUTHORS OR COPYRIGHT HOLDERS  BE LIABLE FOR ANY
-CLAIM, DAMAGES OR  OTHER LIABILITY, WHETHER IN AN  ACTION OF CONTRACT,
-TORT  OR OTHERWISE, ARISING  FROM, OUT  OF OR  IN CONNECTION  WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-==============================================================================
+see petsc_solvers_application/LICENSE.txt
 */
 
 //
@@ -66,7 +29,9 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "linear_solvers/linear_solver.h"
 
 #define DEBUG_SOLVER
-#define VIEW_SUB_MATRICES
+//#define VIEW_SUB_MATRICES
+#define APPLY_NEAR_NULLSPACE
+#define APPLY_COORDINATES
 
 namespace Kratos
 {
@@ -137,7 +102,7 @@ public:
     {
         // TODO collect the equation id for displacements and water pressure in the local process
         IndexType       Istart, Iend;
-        MPI_Comm        comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscErrorCode  ierr;
 
         ierr = MatGetOwnershipRange(rA.Get(), &Istart, &Iend); CHKERRV(ierr);
@@ -149,8 +114,8 @@ public:
         for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
                 dof_iterator != rdof_set.end(); ++dof_iterator)
         {
-//            std::size_t node_id = dof_iterator->Id();
-            std::size_t row_id = dof_iterator->EquationId();
+            const std::size_t& node_id = dof_iterator->Id();
+            const std::size_t& row_id = dof_iterator->EquationId();
 
             if((row_id >= Istart) && (row_id < Iend))
             {
@@ -170,8 +135,74 @@ public:
                     mIndexLU.push_back(row_id);
                 else if(dof_iterator->GetVariable() == LAGRANGE_DISPLACEMENT_Z)
                     mIndexLU.push_back(row_id);
+                else if(dof_iterator->GetVariable() == WATER_PRESSURE)
+                    std::cout << m_my_rank << ": " << " detected WATER_PRESSURE at node " << node_id << ", row " << row_id << std::endl;
             }
         }
+
+        #if defined(APPLY_NEAR_NULLSPACE) || defined(APPLY_COORDINATES)
+        std::size_t i, node_id;
+        typename ModelPart::NodesContainerType nodes = r_model_part.Nodes();
+        #endif
+
+        #ifdef APPLY_NEAR_NULLSPACE
+        // construct the near nullspace of the solid block if required
+        Vec             vec_coords;
+        PetscScalar     *c;
+
+        ierr = VecCreate(Comm, &vec_coords); //CHKERRQ(ierr);
+        ierr = VecSetBlockSize(vec_coords, 3); //CHKERRQ(ierr);
+        ierr = VecSetSizes(vec_coords, static_cast<PetscInt>(rdof_set.size()), PETSC_DECIDE); //CHKERRQ(ierr);
+        ierr = VecSetType(vec_coords, VECMPI);
+//        ierr = VecSetUp(vec_coords); //CHKERRQ(ierr);
+        ierr = VecGetArray(vec_coords, &c); //CHKERRQ(ierr);
+
+        i = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                c[i++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                c[i++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                c[i++] = nodes[node_id].Z();
+            }
+        }
+
+        ierr = VecRestoreArray(vec_coords, &c); //CHKERRQ(ierr);
+        ierr = MatNullSpaceCreateRigidBody(vec_coords, &mmatnull); //CHKERRQ(ierr);
+        ierr = VecDestroy(&vec_coords); //CHKERRQ(ierr);
+        #endif
+
+        #ifdef APPLY_COORDINATES
+        if(mcoords.size() != rdof_set.size())
+            mcoords.resize(rdof_set.size());
+        i = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                mcoords[i++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                mcoords[i++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                mcoords[i++] = nodes[node_id].Z();
+            }
+        }
+        #endif
     }
 
     /**
@@ -192,13 +223,13 @@ public:
         IndexType       its;
         PetscErrorCode  ierr;
         PetscScalar     v;
-        MPI_Comm        comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+        MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscViewer     viewer;
         #ifdef VIEW_SUB_MATRICES
         Mat             A00, A01, A10, A11;
         #endif
 
-        MPI_Comm_rank(comm, &m_my_rank);
+        MPI_Comm_rank(Comm, &m_my_rank);
 
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                 Create the linear solver and set various options
@@ -206,7 +237,7 @@ public:
         /* 
             Create linear solver context
         */
-        ierr = KSPCreate(comm, &ksp); CHKERRQ(ierr);
+        ierr = KSPCreate(Comm, &ksp); CHKERRQ(ierr);
         if(ierr != 0)
             KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPCreate, error code =", ierr)
 
@@ -252,14 +283,14 @@ public:
         */
         ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
         ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(comm, mIndexU.size(), &mIndexU[0], PETSC_COPY_VALUES, &IS_u); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(comm, mIndexLU.size(), &mIndexLU[0], PETSC_COPY_VALUES, &IS_lu); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(Comm, mIndexU.size(), &mIndexU[0], PETSC_COPY_VALUES, &IS_u); CHKERRQ(ierr);
+        ierr = ISCreateGeneral(Comm, mIndexLU.size(), &mIndexLU[0], PETSC_COPY_VALUES, &IS_lu); CHKERRQ(ierr);
         if(m_is_block)
         {
             ierr = ISSetBlockSize(IS_u, 3); CHKERRQ(ierr); // set block size for the u block
-            ierr = ISSetBlockSize(IS_lu, 3); CHKERRQ(ierr); // set block size for the lagrange-u block
+//            ierr = ISSetBlockSize(IS_lu, 3); CHKERRQ(ierr); // set block size for the lagrange-u block
             if(m_my_rank == 0)
-                std::cout << "The block size is set for the sub-matrices" << std::endl;
+                std::cout << "The block size is set for the u block" << std::endl;
         }
         ierr = PCFieldSplitSetIS(pc, "u", IS_u); CHKERRQ(ierr);
         ierr = PCFieldSplitSetIS(pc, "lu", IS_lu); CHKERRQ(ierr);
@@ -314,6 +345,40 @@ public:
             std::cout << "KSPSetFromOptions completed" << std::endl;
         #endif
 
+        ierr = KSPSetUp(ksp); CHKERRQ(ierr);
+
+        #ifdef DEBUG_SOLVER
+        if(m_my_rank == 0)
+            std::cout << "KSPSetUp completed" << std::endl;
+        #endif
+
+        #if defined(APPLY_NEAR_NULLSPACE) || defined(APPLY_COORDINATES)
+        KSP*            ksp_all, ksp_U;
+        PetscInt        nsplits; // should be 2
+        Mat             A00;
+
+        ierr = PCFieldSplitGetSubKSP(pc, &nsplits, &ksp_all); CHKERRQ(ierr);
+//        KRATOS_WATCH(nsplits)
+        ksp_U = ksp_all[0];
+        #endif
+
+        #ifdef APPLY_NEAR_NULLSPACE
+        ierr = KSPGetOperators(ksp_U, &A00, PETSC_NULL); CHKERRQ(ierr);
+        ierr = MatSetNearNullSpace(A00, mmatnull); CHKERRQ(ierr);
+        ierr = MatNullSpaceDestroy(&mmatnull); CHKERRQ(ierr);
+//        mmatnull = PETSC_NULL;
+        if(m_my_rank == 0)
+            std::cout << "PetscFieldSplit_U_LU_Solver::" << __FUNCTION__ << ", the near nullspace for A00 is set" << std::endl;
+        #endif
+
+        #ifdef APPLY_COORDINATES
+        PC              pc_U;
+        ierr = KSPGetPC(ksp_U, &pc_U); CHKERRQ(ierr);
+        PCSetCoordinates(pc_U, 3, static_cast<PetscInt>(mcoords.size()), &mcoords[0]);
+        if(m_my_rank == 0)
+            std::cout << "PetscFieldSplit_U_LU_Solver::" << __FUNCTION__ << ", PCSetCoordinates for A00 is set" << std::endl;
+        #endif
+
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                           Solve the linear system
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
@@ -361,7 +426,7 @@ public:
             print statement from all processes that share a communicator.
             An alternative is PetscFPrintf(), which prints to a file.
         */
-//        ierr = PetscPrintf(comm, "Norm of error %f iterations %d\n", norm_r/norm_b, its); CHKERRQ(ierr);
+//        ierr = PetscPrintf(Comm, "Norm of error %f iterations %d\n", norm_r/norm_b, its); CHKERRQ(ierr);
 
         /*
             Free work space.  All PETSc objects should be destroyed when they
@@ -409,6 +474,14 @@ private:
     bool m_is_block;
     std::vector<IndexType> mIndexU;
     std::vector<IndexType> mIndexLU;
+
+    #ifdef APPLY_NEAR_NULLSPACE
+    MatNullSpace    mmatnull;
+    #endif
+
+    #ifdef APPLY_COORDINATES
+    std::vector<PetscReal> mcoords;
+    #endif
 
     /**
      * Assignment operator.

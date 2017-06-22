@@ -5,13 +5,13 @@ see petsc_solvers_application/LICENSE.txt
 //
 //   Project Name:        Kratos
 //   Last Modified by:    $Author: hbui $
-//   Date:                $Date: 22 Jan 2016 $
+//   Date:                $Date: 6 Jun 2017 $
 //   Revision:            $Revision: 1.0 $
 //
 //
 
-#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED )
-#define  KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED
+#if !defined(KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_SUBDOMAINS_SOLVER_H_INCLUDED )
+#define  KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_SUBDOMAINS_SOLVER_H_INCLUDED
 
 // System includes
 #include <iostream>
@@ -32,6 +32,7 @@ see petsc_solvers_application/LICENSE.txt
 #include "linear_solvers/linear_solver.h"
 
 #define DEBUG_SOLVER
+#define ENABLE_PROFILING
 
 namespace Kratos
 {
@@ -41,11 +42,11 @@ This class constructs Petsc solver with PCFIELDSPLIT preconditioner.
 This class assumes the provided DofSet is organized with contiguous tuple {ux,u_y,u_z}. Hence it shall only be used with the parallel block builder and solver.
 */
 template<class TSparseSpaceType, class TDenseSpaceType>
-class PetscFieldSplit_UX_UY_UZ_Shield_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
+class PetscFieldSplit_U_Subdomains_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
 {
 public:
 
-    KRATOS_CLASS_POINTER_DEFINITION(PetscFieldSplit_UX_UY_UZ_Shield_Solver);
+    KRATOS_CLASS_POINTER_DEFINITION(PetscFieldSplit_U_Subdomains_Solver);
 
     typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> BaseType;
 
@@ -60,21 +61,54 @@ public:
     /**
      * Default Constructor
      */
-    PetscFieldSplit_UX_UY_UZ_Shield_Solver(boost::python::list& shield_nodes) : m_my_rank(0)
+    PetscFieldSplit_U_Subdomains_Solver(boost::python::list& subdomains_nodes,
+            boost::python::list& subdomains_name,
+            bool is_block)
+    : m_my_rank(0), m_is_block(is_block)
     {
-        typedef boost::python::stl_input_iterator<int> iterator_value_type;
-        BOOST_FOREACH(const iterator_value_type::value_type& node_id,
-                      std::make_pair(iterator_value_type(shield_nodes), // begin
-                      iterator_value_type() ) ) // end
+        ExtractSubdomainsNodes(subdomains_nodes, subdomains_name);
+    }
+
+    PetscFieldSplit_U_Subdomains_Solver(boost::python::list& subdomains_nodes,
+            boost::python::list& subdomains_name)
+    : m_my_rank(0), m_is_block(true)
+    {
+        ExtractSubdomainsNodes(subdomains_nodes, subdomains_name);
+    }
+
+    void ExtractSubdomainsNodes(boost::python::list& subdomains_nodes, boost::python::list& subdomains_name)
+    {
+        typedef boost::python::stl_input_iterator<boost::python::list> iterator1_value_type;
+        BOOST_FOREACH(const iterator1_value_type::value_type& list_nodes,
+                      std::make_pair(iterator1_value_type(subdomains_nodes), // begin
+                      iterator1_value_type() ) ) // end
         {
-            m_shield_nodes.insert(node_id);
+            std::set<IndexType> subdomain_nodes;
+
+            typedef boost::python::stl_input_iterator<int> iterator2_value_type;
+            BOOST_FOREACH(const iterator2_value_type::value_type& node_id,
+                          std::make_pair(iterator2_value_type(list_nodes), // begin
+                          iterator2_value_type() ) ) // end
+            {
+                subdomain_nodes.insert(static_cast<IndexType>(node_id));
+            }
+
+            m_subdomains_nodes.push_back(subdomain_nodes);
+        }
+
+        typedef boost::python::stl_input_iterator<std::string> iterator3_value_type;
+        BOOST_FOREACH(const iterator3_value_type::value_type& name,
+                      std::make_pair(iterator3_value_type(subdomains_name), // begin
+                      iterator3_value_type() ) ) // end
+        {
+            m_subdomains_name.push_back(name + "_u");
         }
     }
 
     /**
      * Destructor
      */
-    virtual ~PetscFieldSplit_UX_UY_UZ_Shield_Solver()
+    virtual ~PetscFieldSplit_U_Subdomains_Solver()
     {
     }
 
@@ -108,14 +142,24 @@ public:
         MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscErrorCode  ierr;
 
+        MPI_Comm_rank(Comm, &m_my_rank);
+
+        #ifdef ENABLE_PROFILING
+        typename TSparseSpaceType::TimerType start = TSparseSpaceType::CreateTimer(TSparseSpaceType::GetComm(rA));
+        #endif
+
         ierr = MatGetOwnershipRange(rA.Get(), &Istart, &Iend); CHKERRV(ierr);
 //        KRATOS_WATCH(Istart)
 //        KRATOS_WATCH(Iend)
 
-        mIndexUX.clear();
-        mIndexUY.clear();
-        mIndexUZ.clear();
-        mIndexUShield.clear();
+//        std::cout << m_my_rank << ": " << " At PetscFieldSplit_U_Subdomains_Solver::ProvideAdditionalData" << std::endl;
+
+        if(mIndexUSubdomains.size() != m_subdomains_nodes.size())
+            mIndexUSubdomains.resize(m_subdomains_nodes.size());
+
+        typedef std::map<std::size_t, std::vector<std::size_t> > rows_per_node_map_t;
+        rows_per_node_map_t rows_per_node;
+        std::set<std::size_t> remaining_nodes;
         for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
                 dof_iterator != rdof_set.end(); ++dof_iterator)
         {
@@ -124,38 +168,64 @@ public:
 
             if((row_id >= Istart) && (row_id < Iend))
             {
-//                ModelPart::NodesContainerType::iterator i_node = r_model_part.Nodes().find(node_id);
-//                if(i_node == r_model_part.Nodes().end())
-//                    KRATOS_THROW_ERROR(std::logic_error, "The node does not exist in this partition. Probably data is consistent", "")
-
-                if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+                if(    dof_iterator->GetVariable() == DISPLACEMENT_X
+                    || dof_iterator->GetVariable() == DISPLACEMENT_Y
+                    || dof_iterator->GetVariable() == DISPLACEMENT_Z )
                 {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUX.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
-                }
-                else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
-                {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUY.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
-                }
-                else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
-                {
-                    if(std::find(m_shield_nodes.begin(), m_shield_nodes.end(), node_id) == m_shield_nodes.end())
-                        mIndexUZ.push_back(row_id);
-                    else
-                        mIndexUShield.push_back(row_id);
+                    remaining_nodes.insert(node_id);
+                    rows_per_node[node_id].push_back(row_id);
                 }
             }
         }
 
-        std::sort(mIndexUX.begin(), mIndexUX.end());
-        std::sort(mIndexUY.begin(), mIndexUY.end());
-        std::sort(mIndexUZ.begin(), mIndexUZ.end());
-        std::sort(mIndexUShield.begin(), mIndexUShield.end());
+        for(std::size_t i_subdomain = 0; i_subdomain < m_subdomains_nodes.size(); ++i_subdomain)
+        {
+            mIndexUSubdomains[i_subdomain].clear();
+            for(typename std::set<IndexType>::iterator it = m_subdomains_nodes[i_subdomain].begin();
+                    it != m_subdomains_nodes[i_subdomain].end(); ++it)
+            {
+                rows_per_node_map_t::iterator it2 = rows_per_node.find(*it);
+                if(it2 != rows_per_node.end())
+                {
+                    for(std::size_t i = 0; i < it2->second.size(); ++i)
+                        mIndexUSubdomains[i_subdomain].push_back(it2->second[i]);
+                }
+                remaining_nodes.erase(*it);
+            }
+        }
+
+        std::vector<IndexType> IndexURemainingNodes;
+        for(typename std::set<std::size_t>::iterator it = remaining_nodes.begin();
+                it != remaining_nodes.end(); ++it)
+        {
+            rows_per_node_map_t::iterator it2 = rows_per_node.find(*it);
+            if(it2 != rows_per_node.end())
+            {
+                for(std::size_t i = 0; i < it2->second.size(); ++i)
+                    IndexURemainingNodes.push_back(it2->second[i]);
+            }
+        }
+        mIndexUSubdomains.push_back(IndexURemainingNodes);
+        m_subdomains_name.push_back("remaining_u");
+
+        #ifdef ENABLE_PROFILING
+        double elapsed_time = TSparseSpaceType::GetElapsedTime(start);
+        start = TSparseSpaceType::CreateTimer(TSparseSpaceType::GetComm(rA));
+//        if(m_my_rank == 0)
+            std::cout << m_my_rank << ": PetscFieldSplit_U_Subdomains::ProvideAdditionalData indices extraction elapsed time: " << elapsed_time << std::endl;
+        #endif
+
+        // sort all the indices of all subdomains
+        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+        {
+            std::sort(mIndexUSubdomains[i_subdomain].begin(), mIndexUSubdomains[i_subdomain].end());
+        }
+
+        #ifdef ENABLE_PROFILING
+        elapsed_time = TSparseSpaceType::GetElapsedTime(start);
+//        if(m_my_rank == 0)
+            std::cout << m_my_rank << ": PetscFieldSplit_U_Subdomains::ProvideAdditionalData sorting elapsed time: " << elapsed_time << std::endl;
+        #endif
     }
 
     /**
@@ -169,11 +239,11 @@ public:
     virtual bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
     {
         Vec             r;             /* approx solution, RHS, A*x-b */
-        Mat             A_U, P_U, A_US, P_US;
-        KSP             ksp, ksp_U, ksp_US;               /* linear solver context */
-        KSP*            sub_ksp;      /* ksp's of the fieldsplit */
+        KSP             ksp;               /* linear solver context */
+        IS              IS_u_subdomain[mIndexUSubdomains.size()];  /* index set context */
+//        IS              IS_u_1;
+//        IS              IS_u_2;
         PC              pc;           /* preconditioner context */
-        IS              IS_ux, IS_uy, IS_uz, IS_us;   /* index set context */
         PetscReal       norm_b, norm_r;     /* ||b||, ||b-Ax|| */
         IndexType       its;
         IndexType       nsplits;
@@ -235,47 +305,77 @@ public:
         */
         ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
         ierr = PCSetType(pc, PCFIELDSPLIT); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUX.size(), &mIndexUX[0], PETSC_COPY_VALUES, &IS_ux); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUY.size(), &mIndexUY[0], PETSC_COPY_VALUES, &IS_uy); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUZ.size(), &mIndexUZ[0], PETSC_COPY_VALUES, &IS_uz); CHKERRQ(ierr);
-        ierr = ISCreateGeneral(Comm, mIndexUShield.size(), &mIndexUShield[0], PETSC_COPY_VALUES, &IS_us); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "ux", IS_ux); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "uy", IS_uy); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "uz", IS_uz); CHKERRQ(ierr);
-        ierr = PCFieldSplitSetIS(pc, "u_shield", IS_us); CHKERRQ(ierr);
+
+        #ifdef DEBUG_SOLVER
+        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+            std::cout << m_my_rank << ": mIndexUSubdomains[" << i_subdomain << "].size(): " << mIndexUSubdomains[i_subdomain].size() << std::endl;
+//            PetscSynchronizedPrintf(Comm, "mIndexUSubdomains[%d].size(): %d\n", i_subdomain, mIndexUSubdomains[i_subdomain].size());
+        #endif
+
+        MPI_Barrier(Comm);
+
+        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+        {
+            std::vector<IndexType>& IndexUSubdomain = mIndexUSubdomains[i_subdomain];
+            ierr = ISCreateGeneral(Comm, IndexUSubdomain.size(), &IndexUSubdomain[0], PETSC_COPY_VALUES, &IS_u_subdomain[i_subdomain]); CHKERRQ(ierr);
+        }
+
+//        std::cout << m_my_rank << ": mIndexUSubdomains.size(): " << mIndexUSubdomains.size() << std::endl;
+//        std::vector<IndexType>& IndexUSubdomain1 = mIndexUSubdomains[0];
+//        std::vector<IndexType>& IndexUSubdomain2 = mIndexUSubdomains[1];
+//        ierr = ISCreateGeneral(Comm, IndexUSubdomain1.size(), &IndexUSubdomain1[0], PETSC_COPY_VALUES, &IS_u_1); CHKERRQ(ierr);
+//        ierr = ISCreateGeneral(Comm, IndexUSubdomain2.size(), &IndexUSubdomain2[0], PETSC_COPY_VALUES, &IS_u_2); CHKERRQ(ierr);
+
+        MPI_Barrier(Comm);
+
+        #ifdef DEBUG_SOLVER
+//        if(m_my_rank == 0)
+//            std::cout << "The IS for subdomains is created" << std::endl;
+        std::cout << m_my_rank << ": The IS for subdomains is created" << std::endl;
+        #endif
+
+        if(m_is_block)
+        {
+            for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+            {
+                ierr = ISSetBlockSize(IS_u_subdomain[i_subdomain], 3); CHKERRQ(ierr); // set block size for the subdomain block
+            }
+
+//            ierr = ISSetBlockSize(IS_u_1, 3); CHKERRQ(ierr);
+//            ierr = ISSetBlockSize(IS_u_2, 3); CHKERRQ(ierr);
+        }
+
+        #ifdef DEBUG_SOLVER
+//        if(m_my_rank == 0 && m_is_block)
+//            std::cout << "The block size is set for the sub-matrices" << std::endl;
+        if(m_is_block)
+            std::cout << m_my_rank << ": The block size is set for the sub-matrices" << std::endl;
+//        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+//        {
+//            std::stringstream ss;
+//            PetscViewer viewer;
+//            ss << "is_subdomain_" << i_subdomain << ".txt";
+//            PetscViewerASCIIOpen(Comm, ss.str().c_str(), &viewer);
+//            PetscViewerSetFormat(viewer, PETSC_VIEWER_ASCII_MATLAB);
+//            ISView(IS_u_subdomain[i_subdomain], viewer);
+//            PetscViewerDestroy(&viewer);
+//            std::cout << m_my_rank << ": The view on subdomain " << i_subdomain << " is completed" << std::endl;
+//        }
+        #endif
+
+        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+        {
+            ierr = PCFieldSplitSetIS(pc, m_subdomains_name[i_subdomain].c_str(), IS_u_subdomain[i_subdomain]); CHKERRQ(ierr);
+        }
+
+//        ierr = PCFieldSplitSetIS(pc, "building_u", IS_u_1); CHKERRQ(ierr);
+//        ierr = PCFieldSplitSetIS(pc, "remaining_u", IS_u_2); CHKERRQ(ierr);
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
         {
-            std::cout << "PCFIELDSPLIT completed" << std::endl;
+            std::cout << m_my_rank << ": PCFIELDSPLIT completed" << std::endl;
         }
-        std::cout << m_my_rank << ": mIndexUX.size(): " << mIndexUX.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUY.size(): " << mIndexUY.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUZ.size(): " << mIndexUZ.size() << std::endl;
-        std::cout << m_my_rank << ": mIndexUShield.size(): " << mIndexUShield.size() << std::endl;
-        #endif
-
-        /* 
-            Set block size for sub-matrix,
-        */
-//        ierr = PCFieldSplitGetSubKSP(pc, &nsplits, &sub_ksp); CHKERRQ(ierr);
-//        if(m_my_rank == 0)
-//            KRATOS_WATCH(nsplits)
-//        ksp_U = sub_ksp[0];
-//        ierr = KSPGetOperators(ksp_U, &A_U, &P_U); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(A_U, 3); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(P_U, 3); CHKERRQ(ierr);
-// 
-//        ksp_US = sub_ksp[1];
-//        ierr = KSPGetOperators(ksp_US, &A_US, &P_US); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(A_US, 3); CHKERRQ(ierr);
-//        ierr = MatSetBlockSize(P_US, 3); CHKERRQ(ierr);
-// 
-//        ierr = PetscFree(sub_ksp); CHKERRQ(ierr);
-
-        #ifdef DEBUG_SOLVER
-        if(m_my_rank == 0)
-            std::cout << "Set block size for sub-matrices completed" << std::endl;
         #endif
 
         /* 
@@ -345,6 +445,13 @@ public:
             Free work space.  All PETSc objects should be destroyed when they
             are no longer needed.
         */
+
+        for(std::size_t i_subdomain = 0; i_subdomain < mIndexUSubdomains.size(); ++i_subdomain)
+        {
+            ierr = ISDestroy(&IS_u_subdomain[i_subdomain]); CHKERRQ(ierr);
+        }
+//        ierr = ISDestroy(&IS_u_1); CHKERRQ(ierr);
+//        ierr = ISDestroy(&IS_u_2); CHKERRQ(ierr);
         ierr = KSPDestroy(&ksp); CHKERRQ(ierr);
 //        ierr = VecDestroy(&r); CHKERRQ(ierr);
 
@@ -371,7 +478,7 @@ public:
     virtual void PrintInfo(std::ostream& rOStream) const
     {
         if(m_my_rank == 0)
-            rOStream << "PetscFieldSplit_UX_UY_UZ_Shield solver finished.";
+            rOStream << "PetscFieldSplit_U_Subdomains solver finished.";
     }
 
     /**
@@ -384,16 +491,15 @@ public:
 private:
 
     int m_my_rank;
-    std::set<std::size_t> m_shield_nodes;
-    std::vector<IndexType> mIndexUX;
-    std::vector<IndexType> mIndexUY;
-    std::vector<IndexType> mIndexUZ;
-    std::vector<IndexType> mIndexUShield;
+    bool m_is_block;
+    std::vector<std::set<IndexType> > m_subdomains_nodes;
+    std::vector<std::string> m_subdomains_name;
+    std::vector<std::vector<IndexType> > mIndexUSubdomains;
 
     /**
      * Assignment operator.
      */
-    PetscFieldSplit_UX_UY_UZ_Shield_Solver& operator=(const PetscFieldSplit_UX_UY_UZ_Shield_Solver& Other);    
+    PetscFieldSplit_U_Subdomains_Solver& operator=(const PetscFieldSplit_U_Subdomains_Solver& Other);    
 };
 
 
@@ -401,7 +507,7 @@ private:
  * input stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_UX_UY_UZ_Shield_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_U_Subdomains_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     return rIStream;
 }
@@ -410,7 +516,7 @@ inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_UX_UY_
  * output stream function
  */
 template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_UX_UY_UZ_Shield_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
+inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_U_Subdomains_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
 {
     rThis.PrintInfo(rOStream);
     rOStream << std::endl;
@@ -424,5 +530,5 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_
 
 #undef DEBUG_SOLVER
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_UX_UY_UZ_SHIELD_SOLVER_H_INCLUDED  defined 
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_SUBDOMAINS_SOLVER_H_INCLUDED  defined 
 

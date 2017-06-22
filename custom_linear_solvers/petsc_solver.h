@@ -126,8 +126,6 @@ public:
         ModelPart& r_model_part
     )
     {
-        MPI_Comm Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
-        MPI_Comm_rank(Comm, &m_my_rank);
     }
 
     /**
@@ -147,6 +145,8 @@ public:
         PetscErrorCode  ierr;
         PetscScalar     v;
         MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
+
+        MPI_Comm_rank(Comm, &m_my_rank);
 
         /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
                 Create the linear solver and set various options
