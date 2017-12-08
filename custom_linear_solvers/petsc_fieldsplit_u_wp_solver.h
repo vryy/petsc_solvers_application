@@ -104,6 +104,8 @@ public:
         MPI_Comm        Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         PetscErrorCode  ierr;
 
+        MPI_Comm_rank(Comm, &m_my_rank);
+
         ierr = MatGetOwnershipRange(rA.Get(), &Istart, &Iend); CHKERRV(ierr);
 //        KRATOS_WATCH(Istart)
 //        KRATOS_WATCH(Iend)
@@ -134,9 +136,48 @@ public:
         }
 
         #if defined(APPLY_NEAR_NULLSPACE) || defined(APPLY_COORDINATES)
-        std::size_t i, node_id;
+        std::size_t cnt, node_id;
         typename ModelPart::NodesContainerType nodes = r_model_part.Nodes();
         #endif
+
+        #ifdef APPLY_COORDINATES
+        if(mcoords.size() != rdof_set.size())
+            mcoords.resize(rdof_set.size());
+        cnt = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            node_id = dof_iterator->Id();
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
+            {
+                mcoords[cnt++] = nodes[node_id].X();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
+            {
+                mcoords[cnt++] = nodes[node_id].Y();
+            }
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
+            {
+                mcoords[cnt++] = nodes[node_id].Z();
+            }
+        }
+        mcoords.resize(cnt);
+        #else
+        cnt = 0;
+        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
+                dof_iterator != rdof_set.end(); ++dof_iterator)
+        {
+            if(dof_iterator->GetVariable() == DISPLACEMENT_X) {cnt++;}
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y) {cnt++;}
+            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z) {cnt++;}
+        }
+        #endif
+
+        // make sure that the number of displacement dofs is divisible to 3
+        if (cnt % 3 != 0)
+        {
+            KRATOS_THROW_ERROR(std::logic_error, "The number of displacement dofs is not divisible by 3 at process rank", m_my_rank)
+        }
 
         #ifdef APPLY_NEAR_NULLSPACE
         // construct the near nullspace of the solid block if required
@@ -145,56 +186,33 @@ public:
 
         ierr = VecCreate(Comm, &vec_coords); //CHKERRQ(ierr);
         ierr = VecSetBlockSize(vec_coords, 3); //CHKERRQ(ierr);
-        ierr = VecSetSizes(vec_coords, static_cast<PetscInt>(rdof_set.size()), PETSC_DECIDE); //CHKERRQ(ierr);
+        ierr = VecSetSizes(vec_coords, static_cast<PetscInt>(cnt), PETSC_DECIDE); //CHKERRQ(ierr);
         ierr = VecSetType(vec_coords, VECMPI);
 //        ierr = VecSetUp(vec_coords); //CHKERRQ(ierr);
         ierr = VecGetArray(vec_coords, &c); //CHKERRQ(ierr);
 
-        i = 0;
+        cnt = 0;
         for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
                 dof_iterator != rdof_set.end(); ++dof_iterator)
         {
             node_id = dof_iterator->Id();
             if(dof_iterator->GetVariable() == DISPLACEMENT_X)
             {
-                c[i++] = nodes[node_id].X();
+                c[cnt++] = nodes[node_id].X();
             }
             else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
             {
-                c[i++] = nodes[node_id].Y();
+                c[cnt++] = nodes[node_id].Y();
             }
             else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
             {
-                c[i++] = nodes[node_id].Z();
+                c[cnt++] = nodes[node_id].Z();
             }
         }
 
         ierr = VecRestoreArray(vec_coords, &c); //CHKERRQ(ierr);
         ierr = MatNullSpaceCreateRigidBody(vec_coords, &mmatnull); //CHKERRQ(ierr);
         ierr = VecDestroy(&vec_coords); //CHKERRQ(ierr);
-        #endif
-
-        #ifdef APPLY_COORDINATES
-        if(mcoords.size() != rdof_set.size())
-            mcoords.resize(rdof_set.size());
-        i = 0;
-        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
-                dof_iterator != rdof_set.end(); ++dof_iterator)
-        {
-            node_id = dof_iterator->Id();
-            if(dof_iterator->GetVariable() == DISPLACEMENT_X)
-            {
-                mcoords[i++] = nodes[node_id].X();
-            }
-            else if(dof_iterator->GetVariable() == DISPLACEMENT_Y)
-            {
-                mcoords[i++] = nodes[node_id].Y();
-            }
-            else if(dof_iterator->GetVariable() == DISPLACEMENT_Z)
-            {
-                mcoords[i++] = nodes[node_id].Z();
-            }
-        }
         #endif
     }
 
