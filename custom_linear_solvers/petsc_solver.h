@@ -148,10 +148,10 @@ public:
 
         MPI_Comm_rank(Comm, &m_my_rank);
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                 Create the linear solver and set various options
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-        /* 
+        /*
             Create linear solver context
         */
         ierr = KSPCreate(Comm, &ksp); CHKERRQ(ierr);
@@ -162,8 +162,8 @@ public:
         if(m_my_rank == 0)
             std::cout << "KSPCreate completed" << std::endl;
         #endif
-        
-        /* 
+
+        /*
             Set operators. Here the matrix that defines the linear system
             also serves as the preconditioning matrix.
         */
@@ -176,7 +176,7 @@ public:
             std::cout << "KSPSetOperators completed" << std::endl;
         #endif
 
-        /* 
+        /*
             Set linear solver defaults for this problem (optional).
             - By extracting the KSP and PC contexts from the KSP context,
             we can then directly call any KSP and PC routines to set
@@ -195,7 +195,7 @@ public:
             std::cout << "KSPSetTolerances completed" << std::endl;
         #endif
 
-        /* 
+        /*
             Set runtime options, e.g.,
                 -ksp_type <type> -pc_type <type> -ksp_monitor -ksp_rtol <rtol>
             These options will override those specified above as long as
@@ -223,7 +223,7 @@ public:
         }
         #endif
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                           Solve the linear system
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
         ierr = KSPSolve(ksp, rB.Get(), rX.Get());// CHKERRQ(ierr);
@@ -235,7 +235,7 @@ public:
             std::cout << "KSPSolve completed" << std::endl;
         #endif
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                           Check solution and clean up
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
         /*
@@ -255,7 +255,7 @@ public:
             #endif
         }
 
-        /* 
+        /*
             Check the error
         */
 //        ierr = VecDuplicate(rB.Get(), &r); CHKERRQ(ierr);
@@ -266,7 +266,7 @@ public:
 //        ierr = KSPGetIterationNumber(ksp, &its); CHKERRQ(ierr);
 
         /*
-            Print convergence information.  PetscPrintf() produces a single 
+            Print convergence information.  PetscPrintf() produces a single
             print statement from all processes that share a communicator.
             An alternative is PetscFPrintf(), which prints to a file.
         */
@@ -319,7 +319,7 @@ private:
     /**
      * Assignment operator.
      */
-    PetscSolver& operator=(const PetscSolver& Other);    
+    PetscSolver& operator=(const PetscSolver& Other);
 };
 
 
@@ -350,5 +350,5 @@ inline std::ostream& operator << (std::ostream& rOStream, const PetscSolver<TSpa
 
 #undef DEBUG_SOLVER
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_SOLVER_H_INCLUDED  defined 
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_SOLVER_H_INCLUDED  defined
 
