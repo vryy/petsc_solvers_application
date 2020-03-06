@@ -245,7 +245,10 @@ public:
         ierr = KSPGetConvergedReason(ksp, &reason); // CHKERRQ(ierr);
         if(reason < 0)
         {
-            KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason =", reason)
+            if (reason == KSP_DIVERGED_PC_FAILED)
+                KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason: KSP_DIVERGED_PC_FAILED", "")
+            else
+                KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason:", reason)
         }
         else
         {
