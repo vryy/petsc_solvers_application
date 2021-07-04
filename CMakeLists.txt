@@ -14,6 +14,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/applications/dis
 #######################################################################
 
 ######### add additional libraries
+INCLUDE_DIRECTORIES($ENV{MPI_ROOT}/include)
 IF(DEFINED PETSC_DIR)
     SET(PETSC_EXECUTABLE_RUNS "YES") #skip the test
     FIND_PACKAGE(PETSc REQUIRED)
