@@ -1,14 +1,14 @@
 /*
 ==============================================================================
-KratosPetscSolversApplication 
+KratosPetscSolversApplication
 A library based on:
 Kratos
 A General Purpose Software for Multi-Physics Finite Element Analysis
 Version 1.0 (Released on march 05, 2007).
 
 Copyright 2007
-Pooyan Dadvand, Riccardo Rossi, Janosch Stascheit, Felix Nagel 
-pooyan@cimne.upc.edu 
+Pooyan Dadvand, Riccardo Rossi, Janosch Stascheit, Felix Nagel
+pooyan@cimne.upc.edu
 rrossi@cimne.upc.edu
 janosch.stascheit@rub.de
 nagel@sd.rub.de
@@ -42,9 +42,9 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 */
- 
-//   
-//   Project Name:        Kratos       
+
+//
+//   Project Name:        Kratos
 //   Last modified by:    $Author: hbui $
 //   Date:                $Date: Jul 16, 2013 $
 //   Revision:            $Revision: 1.1 $
@@ -52,15 +52,13 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 //Change log:
 
-// System includes 
+// System includes
 
 #if defined(KRATOS_PYTHON)
-// External includes 
-#include <boost/python.hpp>
+// External includes
 
-
-// Project includes 
-#include "includes/define.h"
+// Project includes
+#include "includes/define_python.h"
 #include "petsc_solvers_application/petsc_solvers_application.h"
 #include "custom_python/add_linear_solvers_to_python.h"
 
@@ -70,27 +68,22 @@ namespace Kratos
 namespace Python
 {
 
-  using namespace boost::python;
-
-
-  
   BOOST_PYTHON_MODULE(KratosPetscSolversApplication)
   {
 
-	  class_<KratosPetscSolversApplication, 
-			  KratosPetscSolversApplication::Pointer, 
-			  bases<KratosApplication>, boost::noncopyable >("KratosPetscSolversApplication")
-			;
+    using namespace boost::python;
+
+    class_<KratosPetscSolversApplication,
+           KratosPetscSolversApplication::Pointer,
+           bases<KratosApplication>, boost::noncopyable >("KratosPetscSolversApplication")
+    ;
 
     PetscSolversApplication_AddLinearSolversToPython();
-    
-	//registering variables in python
 
   }
-  
-  
+
 }  // namespace Python.
-  
+
 }  // namespace Kratos.
 
 #endif // KRATOS_PYTHON defined
