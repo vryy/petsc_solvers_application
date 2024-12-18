@@ -38,8 +38,8 @@ add_library(KratosPetscSolversApplication SHARED ${KRATOS_PETSC_SOLVERS_APPLICAT
 target_link_libraries(KratosPetscSolversApplication KratosCore)
 target_link_libraries(KratosPetscSolversApplication KratosDistributedBuildersApplication) # I linked it for temporary here. WHen I remake the petsc_space.h (remove the petsc_space.cpp), I will delete this; remove this after moving SCALING_FACTOR_* to StructuralApplication
 target_link_libraries(KratosPetscSolversApplication ${PETSC_LIBRARIES})
-#target_link_libraries(KratosPetscSolversApplication ${MPI_CXX_LIBRARY} ${MPI_C_LIBRARY})
 target_link_libraries(KratosPetscSolversApplication ${MPI_LIBRARIES})
+set_target_properties(KratosPetscSolversApplication PROPERTIES COMPILE_DEFINITIONS "KRATOS_CORE=IMPORT;PETSC_SOLVERS_APPLICATION=EXPORT;")
 set_target_properties(KratosPetscSolversApplication PROPERTIES PREFIX "")
 install(TARGETS KratosPetscSolversApplication DESTINATION libs )
 
