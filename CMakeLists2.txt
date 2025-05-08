@@ -1,27 +1,17 @@
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
-######### add include directory here
-include_directories( ${CMAKE_SOURCE_DIR}/external_libraries )
-include_directories( ${CMAKE_SOURCE_DIR}/kratos )
-include_directories( ${CMAKE_SOURCE_DIR}/applications )
-include_directories( ${CMAKE_SOURCE_DIR}/applications/distributed_builders_application )
-#######################################################################
-
 ######### add additional cmake module path
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/applications/distributed_builders_application/custom_cmake_modules")
 #######################################################################
 
 ######### add additional libraries
-INCLUDE_DIRECTORIES($ENV{MPI_ROOT}/include)
-IF(DEFINED PETSC_DIR)
-    SET(PETSC_EXECUTABLE_RUNS "YES") #skip the test
-    FIND_PACKAGE(PETSc REQUIRED)
-    IF(NOT ${PETSC_FOUND})
+set(PETSC_SOLVERS_APPLICATION_INCLUDE_DIRS "$ENV{MPI_ROOT}/include")
+if(DEFINED PETSC_DIR)
+    set(PETSC_EXECUTABLE_RUNS "YES") #skip the test
+    find_package(PETSc REQUIRED)
+    if(NOT ${PETSC_FOUND})
         message(ERROR "PETSc is required for PetscSolversApplication")
-    ENDIF()
-    INCLUDE_DIRECTORIES(${PETSC_INCLUDES})
-ENDIF()
-
+    endif()
+    set(PETSC_SOLVERS_APPLICATION_INCLUDE_DIRS "${PETSC_SOLVERS_APPLICATION_INCLUDE_DIRS};${PETSC_INCLUDES}")
+endif()
 
 ## generate variables with the sources
 set( KRATOS_PETSC_SOLVERS_APPLICATION_SOURCES
@@ -30,16 +20,18 @@ set( KRATOS_PETSC_SOLVERS_APPLICATION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/custom_python/petsc_solvers_python_application.cpp
 )
 
-
 ###############################################################
 ## define library Kratos which defines the basic python interface
 add_library(KratosPetscSolversApplication SHARED ${KRATOS_PETSC_SOLVERS_APPLICATION_SOURCES})
-
-target_link_libraries(KratosPetscSolversApplication KratosCore)
-target_link_libraries(KratosPetscSolversApplication KratosDistributedBuildersApplication) # I linked it for temporary here. WHen I remake the petsc_space.h (remove the petsc_space.cpp), I will delete this; remove this after moving SCALING_FACTOR_* to StructuralApplication
-target_link_libraries(KratosPetscSolversApplication ${PETSC_LIBRARIES})
-target_link_libraries(KratosPetscSolversApplication ${MPI_LIBRARIES})
-set_target_properties(KratosPetscSolversApplication PROPERTIES COMPILE_DEFINITIONS "KRATOS_CORE=IMPORT;PETSC_SOLVERS_APPLICATION=EXPORT;")
+target_link_libraries(KratosPetscSolversApplication PRIVATE KratosCore)
+target_link_libraries(KratosPetscSolversApplication PRIVATE KratosDistributedBuildersApplication) # I linked it for temporary here. WHen I remake the petsc_space.h (remove the petsc_space.cpp), I will delete this; remove this after moving SCALING_FACTOR_* to StructuralApplication
+target_link_libraries(KratosPetscSolversApplication PUBLIC ${PETSC_LIBRARIES})
+target_link_libraries(KratosPetscSolversApplication PUBLIC ${MPI_LIBRARIES})
+target_include_directories(KratosPetscSolversApplication PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(KratosPetscSolversApplication PUBLIC ${PETSC_SOLVERS_APPLICATION_INCLUDE_DIRS})
+target_compile_definitions(KratosPetscSolversApplication PRIVATE KRATOS_CORE=IMPORT)
+target_compile_definitions(KratosPetscSolversApplication PRIVATE DISTRIBUTED_BUILDERS_APPLICATION=IMPORT)
+target_compile_definitions(KratosPetscSolversApplication PRIVATE PETSC_SOLVERS_APPLICATION=EXPORT)
 set_target_properties(KratosPetscSolversApplication PROPERTIES PREFIX "")
 install(TARGETS KratosPetscSolversApplication DESTINATION libs )
 
