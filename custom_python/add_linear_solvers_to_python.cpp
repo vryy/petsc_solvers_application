@@ -1,5 +1,5 @@
-//   
-//   Project Name:        Kratos       
+//
+//   Project Name:        Kratos
 //   Last modified by:    $Author: hbui $
 //   Date:                $Date: Apr 19, 2012 $
 //   Revision:            $Revision: 1.0 $
@@ -7,13 +7,14 @@
 //
 
 
-// System includes 
+// System includes
 
-// External includes 
+// External includes
 #include <boost/python.hpp>
 
 // Project includes
 #include "includes/define.h"
+#include "includes/model_part.h"
 #include "spaces/ublas_space.h"
 #include "linear_solvers/linear_solver.h"
 #include "custom_linear_solvers/petsc_solver.h"
@@ -60,7 +61,7 @@ namespace Python
         // linear solvers using PETScSpace
         //***************************************************************************
 
-        typedef LinearSolver<PETScSparseSpaceType, PETScLocalSpaceType> PETScLinearSolverType;
+        typedef LinearSolver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PETScLinearSolverType;
         class_<PETScLinearSolverType, PETScLinearSolverType::Pointer, boost::noncopyable>
         ("PETScLinearSolver", init<>())
         .def("AdditionalPhysicalDataIsNeeded", &PETScLinearSolverType::AdditionalPhysicalDataIsNeeded)
@@ -68,122 +69,106 @@ namespace Python
         .def(self_ns::str(self))
         ;
 
-        typedef PetscSolver<PETScSparseSpaceType, PETScLocalSpaceType> PetscSolverType;
+        typedef PetscSolver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscSolverType;
         class_<PetscSolverType, PetscSolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScSolver", init<>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscGAMGElasticitySolver<PETScSparseSpaceType, PETScLocalSpaceType> PetscGAMGElasticitySolverType;
+        typedef PetscGAMGElasticitySolver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscGAMGElasticitySolverType;
         class_<PetscGAMGElasticitySolverType, PetscGAMGElasticitySolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScGAMGElasticitySolver", init<>())
         .def("SetWorkingDimension", &PetscGAMGElasticitySolverType::SetWorkingDimension)
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_WP_SolverType;
+        typedef PetscFieldSplit_U_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_WP_SolverType;
         class_<PetscFieldSplit_U_WP_SolverType, PetscFieldSplit_U_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_WP_Solver", init<>())
         .def(init<bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_LU_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_LU_WP_SolverType;
+        typedef PetscFieldSplit_U_LU_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_LU_WP_SolverType;
         class_<PetscFieldSplit_U_LU_WP_SolverType, PetscFieldSplit_U_LU_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_LU_WP_Solver", init<>())
         .def(init<bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_LU_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_LU_SolverType;
+        typedef PetscFieldSplit_U_LU_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_LU_SolverType;
         class_<PetscFieldSplit_U_LU_SolverType, PetscFieldSplit_U_LU_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_LU_Solver", init<>())
         .def(init<bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_UX_UY_UZ_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_UX_UY_UZ_WP_SolverType;
+        typedef PetscFieldSplit_UX_UY_UZ_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_UX_UY_UZ_WP_SolverType;
         class_<PetscFieldSplit_UX_UY_UZ_WP_SolverType, PetscFieldSplit_UX_UY_UZ_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_UX_UY_UZ_WP_Solver", init<>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_UX_UY_UZ_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_UX_UY_UZ_SolverType;
+        typedef PetscFieldSplit_UX_UY_UZ_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_UX_UY_UZ_SolverType;
         class_<PetscFieldSplit_UX_UY_UZ_SolverType, PetscFieldSplit_UX_UY_UZ_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_UX_UY_UZ_Solver", init<>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_UX_UY_UZ_Shield_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_UX_UY_UZ_Shield_SolverType;
+        typedef PetscFieldSplit_UX_UY_UZ_Shield_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_UX_UY_UZ_Shield_SolverType;
         class_<PetscFieldSplit_UX_UY_UZ_Shield_SolverType, PetscFieldSplit_UX_UY_UZ_Shield_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_UX_UY_UZ_Shield_Solver", init<boost::python::list&>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_Shield_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_Shield_SolverType;
+        typedef PetscFieldSplit_U_Shield_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_Shield_SolverType;
         class_<PetscFieldSplit_U_Shield_SolverType, PetscFieldSplit_U_Shield_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_Shield_Solver", init<boost::python::list&>())
         .def(init<boost::python::list&, bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_Subdomains_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_Subdomains_SolverType;
+        typedef PetscFieldSplit_U_Subdomains_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_Subdomains_SolverType;
         class_<PetscFieldSplit_U_Subdomains_SolverType, PetscFieldSplit_U_Subdomains_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_Subdomains_Solver", init<boost::python::list&, boost::python::list&>())
         .def(init<boost::python::list&, boost::python::list&, bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_Shield_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_Shield_WP_SolverType;
+        typedef PetscFieldSplit_U_Shield_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_Shield_WP_SolverType;
         class_<PetscFieldSplit_U_Shield_WP_SolverType, PetscFieldSplit_U_Shield_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_Shield_WP_Solver", init<boost::python::list&>())
         .def(init<boost::python::list&, bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_Nested_Shield_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_Nested_Shield_WP_SolverType;
+        typedef PetscFieldSplit_U_Nested_Shield_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_Nested_Shield_WP_SolverType;
         class_<PetscFieldSplit_U_Nested_Shield_WP_SolverType, PetscFieldSplit_U_Nested_Shield_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_Nested_Shield_WP_Solver", init<boost::python::list&>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_U_Nested_Subdomains_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_U_Nested_Subdomains_WP_SolverType;
+        typedef PetscFieldSplit_U_Nested_Subdomains_WP_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_U_Nested_Subdomains_WP_SolverType;
         class_<PetscFieldSplit_U_Nested_Subdomains_WP_SolverType, PetscFieldSplit_U_Nested_Subdomains_WP_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_U_Nested_Subdomains_WP_Solver", init<boost::python::list&, boost::python::list&>())
         .def(init<boost::python::list&, boost::python::list&, bool>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscScalingWrapper<PETScSparseSpaceType, PETScLocalSpaceType> PetscScalingWrapperType;
+        typedef PetscScalingWrapper<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscScalingWrapperType;
         class_<PetscScalingWrapperType, PetscScalingWrapperType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScScalingWrapper", init<PETScLinearSolverType::Pointer>())
-        .def(self_ns::str(self))
         ;
 
-        typedef Petsc_U_WP_ScalingWrapper<PETScSparseSpaceType, PETScLocalSpaceType> Petsc_U_WP_ScalingWrapperType;
+        typedef Petsc_U_WP_ScalingWrapper<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> Petsc_U_WP_ScalingWrapperType;
         class_<Petsc_U_WP_ScalingWrapperType, Petsc_U_WP_ScalingWrapperType::Pointer, bases<PetscScalingWrapperType>, boost::noncopyable>
         ("PETSc_U_WP_ScalingWrapper", init<PETScLinearSolverType::Pointer>())
         .def(self_ns::str(self))
         ;
 
-        typedef PetscFieldSplit_V_P_Solver<PETScSparseSpaceType, PETScLocalSpaceType> PetscFieldSplit_V_P_SolverType;
+        typedef PetscFieldSplit_V_P_Solver<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscFieldSplit_V_P_SolverType;
         class_<PetscFieldSplit_V_P_SolverType, PetscFieldSplit_V_P_SolverType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScFieldSplit_V_P_Solver", init<>())
         .def(init<bool, int>())
-        .def(self_ns::str(self))
         ;
 
-        typedef PetscNullspaceSolverWrapper<PETScSparseSpaceType, PETScLocalSpaceType> PetscNullspaceSolverWrapperType;
+        typedef PetscNullspaceSolverWrapper<PETScSparseSpaceType, PETScLocalSpaceType, ModelPart> PetscNullspaceSolverWrapperType;
         class_<PetscNullspaceSolverWrapperType, PetscNullspaceSolverWrapperType::Pointer, bases<PETScLinearSolverType>, boost::noncopyable>
         ("PETScNullspaceSolverWrapper", init<PETScLinearSolverType::Pointer>())
-        .def(self_ns::str(self))
         ;
 
         //***************************************************************************
         // linear solvers using PETScDDSpace
         //***************************************************************************
 
-        typedef LinearSolver<PETScDDSparseSpaceType, PETScDDLocalSpaceType> PETScDDLinearSolverType;
+        typedef LinearSolver<PETScDDSparseSpaceType, PETScDDLocalSpaceType, ModelPart> PETScDDLinearSolverType;
         class_<PETScDDLinearSolverType, PETScDDLinearSolverType::Pointer, boost::noncopyable>
         ("PETScDDLinearSolver", init<>())
         .def("AdditionalPhysicalDataIsNeeded", &PETScDDLinearSolverType::AdditionalPhysicalDataIsNeeded)
@@ -191,10 +176,9 @@ namespace Python
         .def(self_ns::str(self))
         ;
 
-        typedef PetscSolver<PETScDDSparseSpaceType, PETScDDLocalSpaceType> PetscDDSolverType;
+        typedef PetscSolver<PETScDDSparseSpaceType, PETScDDLocalSpaceType, ModelPart> PetscDDSolverType;
         class_<PetscDDSolverType, PetscDDSolverType::Pointer, bases<PETScDDLinearSolverType>, boost::noncopyable>
         ("PETScDDSolver", init<>())
-        .def(self_ns::str(self))
         ;
 
     }

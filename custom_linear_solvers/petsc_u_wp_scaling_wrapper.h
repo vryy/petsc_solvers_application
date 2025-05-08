@@ -28,27 +28,23 @@ see petsc_solvers_application/LICENSE.txt
 #include "utilities/openmp_utils.h"
 #include "linear_solvers/linear_solver.h"
 #include "petsc_scaling_wrapper.h"
+#include "distributed_builders_application/distributed_builders_application.h" // for SCALING_* variables
 
 #define DEBUG_SOLVER
 
 namespace Kratos
 {
 
-extern VariableComponent<VectorComponentAdaptor<array_1d<double, 3> > > SCALING_FACTOR_DISPLACEMENT_X;
-extern VariableComponent<VectorComponentAdaptor<array_1d<double, 3> > > SCALING_FACTOR_DISPLACEMENT_Y;
-extern VariableComponent<VectorComponentAdaptor<array_1d<double, 3> > > SCALING_FACTOR_DISPLACEMENT_Z;
-extern Variable<double> SCALING_FACTOR_WATER_PRESSURE;
-
-template<class TSparseSpaceType, class TDenseSpaceType>
-class Petsc_U_WP_ScalingWrapper : public PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType>
+template<class TSparseSpaceType, class TDenseSpaceType, class TModelPartType>
+class Petsc_U_WP_ScalingWrapper : public PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType, TModelPartType>
 {
 public:
 
     KRATOS_CLASS_POINTER_DEFINITION(Petsc_U_WP_ScalingWrapper);
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> LinearSolverType;
+    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType> LinearSolverType;
 
-    typedef PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType> BaseType;
+    typedef PetscScalingWrapper<TSparseSpaceType, TDenseSpaceType, TModelPartType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -60,6 +56,8 @@ public:
 
     typedef typename TSparseSpaceType::ValueType ValueType;
 
+    typedef typename BaseType::ModelPartType ModelPartType;
+
     /**
      * Default Constructor
      */
@@ -70,7 +68,7 @@ public:
     /**
      * Destructor
      */
-    virtual ~Petsc_U_WP_ScalingWrapper()
+    ~Petsc_U_WP_ScalingWrapper() override
     {
     }
 
@@ -80,7 +78,7 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function tells if the solver requires such data
      */
-    virtual bool AdditionalPhysicalDataIsNeeded()
+    bool AdditionalPhysicalDataIsNeeded() override
     {
         return true;
     }
@@ -91,13 +89,13 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function is the place to eventually provide such data
      */
-    virtual void ProvideAdditionalData(
+    void ProvideAdditionalData(
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rdof_set,
-        ModelPart& r_model_part
-    )
+        typename ModelPartType::DofsArrayType& rdof_set,
+        ModelPartType& r_model_part
+    ) override
     {
         IndexType       Istart, Iend;
         PetscErrorCode  ierr;
@@ -150,7 +148,7 @@ public:
     /**
      * Print information about this object.
      */
-    virtual void PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         BaseType::PrintInfo(rOStream);
         if(BaseType::m_my_rank == 0)
@@ -160,48 +158,21 @@ public:
     /**
      * Print object's data.
      */
-    virtual void PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
         BaseType::PrintData(rOStream);
     }
-
-protected:
 
 private:
 
     /**
      * Assignment operator.
      */
-    Petsc_U_WP_ScalingWrapper& operator=(const Petsc_U_WP_ScalingWrapper& Other);    
+    Petsc_U_WP_ScalingWrapper& operator=(const Petsc_U_WP_ScalingWrapper& Other);
 };
-
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, Petsc_U_WP_ScalingWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const Petsc_U_WP_ScalingWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
 
 }  // namespace Kratos.
 
 #undef DEBUG_SOLVER
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_SCALING_WRAPPER_H_INCLUDED  defined 
-
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_SCALING_WRAPPER_H_INCLUDED  defined

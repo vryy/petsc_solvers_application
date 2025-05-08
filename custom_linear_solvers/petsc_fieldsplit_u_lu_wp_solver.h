@@ -37,14 +37,14 @@ namespace Kratos
 This class constructs Petsc solver with PCFIELDSPLIT preconditioner.
 This class assumes the provided DofSet is organized with contiguous tuple {ux,uy,uz}, {l_ux,l_uy,l_uz} and the water pressure is single field. Hence it shall only be used with the parallel block builder and solver.
 */
-template<class TSparseSpaceType, class TDenseSpaceType>
-class PetscFieldSplit_U_LU_WP_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
+template<class TSparseSpaceType, class TDenseSpaceType, class TModelPartType>
+class PetscFieldSplit_U_LU_WP_Solver : public LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType>
 {
 public:
 
     KRATOS_CLASS_POINTER_DEFINITION(PetscFieldSplit_U_LU_WP_Solver);
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> BaseType;
+    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -54,21 +54,25 @@ public:
 
     typedef typename TSparseSpaceType::IndexType IndexType;
 
+    typedef typename BaseType::ModelPartType ModelPartType;
+
     /**
      * Default Constructor
      */
-    PetscFieldSplit_U_LU_WP_Solver() : m_my_rank(0), m_is_block(true)
+    PetscFieldSplit_U_LU_WP_Solver()
+    : BaseType(), m_my_rank(0), m_is_block(true)
     {
     }
 
-    PetscFieldSplit_U_LU_WP_Solver(bool is_block) : m_my_rank(0), m_is_block(is_block)
+    PetscFieldSplit_U_LU_WP_Solver(bool is_block)
+    : BaseType(), m_my_rank(0), m_is_block(is_block)
     {
     }
 
     /**
      * Destructor
      */
-    virtual ~PetscFieldSplit_U_LU_WP_Solver()
+    ~PetscFieldSplit_U_LU_WP_Solver() override
     {
     }
 
@@ -78,7 +82,7 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function tells if the solver requires such data
      */
-    virtual bool AdditionalPhysicalDataIsNeeded()
+    bool AdditionalPhysicalDataIsNeeded() override
     {
         return true;
     }
@@ -89,13 +93,13 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function is the place to eventually provide such data
      */
-    virtual void ProvideAdditionalData(
+    void ProvideAdditionalData(
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rdof_set,
-        ModelPart& r_model_part
-    )
+        typename ModelPartType::DofsArrayType& rdof_set,
+        ModelPartType& r_model_part
+    ) override
     {
         // TODO collect the equation id for displacements and water pressure in the local process
         IndexType       Istart, Iend;
@@ -111,17 +115,16 @@ public:
         mIndexU.clear();
         mIndexLU.clear();
         mIndexWP.clear();
-        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
-                dof_iterator != rdof_set.end(); ++dof_iterator)
+        for(auto dof_iterator = rdof_set.begin(); dof_iterator != rdof_set.end(); ++dof_iterator)
         {
 //            std::size_t node_id = dof_iterator->Id();
             std::size_t row_id = dof_iterator->EquationId();
 
             if((row_id >= Istart) && (row_id < Iend))
             {
-//                ModelPart::NodesContainerType::iterator i_node = r_model_part.Nodes().find(node_id);
+//                auto i_node = r_model_part.Nodes().find(node_id);
 //                if(i_node == r_model_part.Nodes().end())
-//                    KRATOS_THROW_ERROR(std::logic_error, "The node does not exist in this partition. Probably data is consistent", "")
+//                    KRATOS_ERROR << "The node does not exist in this partition. Probably data is consistent", "")
 
                 if(dof_iterator->GetVariable() == DISPLACEMENT_X)
                 {
@@ -171,7 +174,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    virtual bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
         Vec             r;             /* approx solution, RHS, A*x-b */
         KSP             ksp;               /* linear solver context */
@@ -188,35 +191,35 @@ public:
 
         MPI_Comm_rank(Comm, &m_my_rank);
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                 Create the linear solver and set various options
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-        /* 
+        /*
             Create linear solver context
         */
         ierr = KSPCreate(Comm, &ksp); CHKERRQ(ierr);
         if(ierr != 0)
-            KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPCreate, error code =", ierr)
+            KRATOS_ERROR << "Error at KSPCreate, error code = " << ierr;
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPCreate completed" << std::endl;
         #endif
-        
-        /* 
+
+        /*
             Set operators. Here the matrix that defines the linear system
             also serves as the preconditioning matrix.
         */
         ierr = KSPSetOperators(ksp, rA.Get(), rA.Get()); CHKERRQ(ierr);
         if(ierr != 0)
-            KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPSetOperators, error code =", ierr)
+            KRATOS_ERROR << "Error at KSPSetOperators, error code = " << ierr;
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPSetOperators completed" << std::endl;
         #endif
 
-        /* 
+        /*
             Set linear solver defaults for this problem (optional).
             - By extracting the KSP and PC contexts from the KSP context,
             we can then directly call any KSP and PC routines to set
@@ -228,14 +231,14 @@ public:
         */
         ierr = KSPSetTolerances(ksp, 1.0e-9, 1.0e-20, PETSC_DEFAULT, PETSC_DEFAULT); CHKERRQ(ierr);
         if(ierr != 0)
-            KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPSetTolerances, error code =", ierr)
+            KRATOS_ERROR << "Error at KSPSetTolerances, error code = " << ierr;
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPSetTolerances completed" << std::endl;
         #endif
 
-        /* 
+        /*
             Set runtime options, e.g.,
                 -ksp_type <type> -pc_type <type> -ksp_monitor -ksp_rtol <rtol>
             These options will override those specified above as long as
@@ -250,7 +253,7 @@ public:
         #endif
 
         /* The fieldsplit is organized as {{u, wp}, lu} */
-        /* 
+        /*
             Set PC for outer fieldsplit
         */
         ierr = KSPGetPC(ksp, &pc); CHKERRQ(ierr);
@@ -271,7 +274,7 @@ public:
         ierr = PCFieldSplitSetIS(pc, "lu", IS_lu); CHKERRQ(ierr);
         ierr = KSPSetUp(ksp); CHKERRQ(ierr);
 
-        /* 
+        /*
             Set PC for inner fieldsplit
         */
         /* firstly rebuild the relative local index */
@@ -314,19 +317,19 @@ public:
         std::cout << m_my_rank << ": LocalIndexWP.size(): " << LocalIndexWP.size() << std::endl;
         #endif
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                           Solve the linear system
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
         ierr = KSPSolve(ksp, rB.Get(), rX.Get());// CHKERRQ(ierr);
         if(ierr != 0)
-            KRATOS_THROW_ERROR(std::runtime_error, "Error at KSPSolve, error code =", ierr)
+            KRATOS_ERROR << "Error at KSPSolve, error code = " << ierr;
 
         #ifdef DEBUG_SOLVER
         if(m_my_rank == 0)
             std::cout << "KSPSolve completed" << std::endl;
         #endif
 
-        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+        /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
                           Check solution and clean up
         - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
         /*
@@ -336,7 +339,7 @@ public:
         ierr = KSPGetConvergedReason(ksp, &reason); // CHKERRQ(ierr);
         if(reason < 0)
         {
-            KRATOS_THROW_ERROR(std::runtime_error, "The linear solver does not converge, reason =", reason)
+            KRATOS_ERROR << "The linear solver does not converge, reason = " << reason;
         }
         else
         {
@@ -346,7 +349,7 @@ public:
             #endif
         }
 
-        /* 
+        /*
             Check the error
         */
 //        ierr = VecDuplicate(rB.Get(), &r); CHKERRQ(ierr);
@@ -357,7 +360,7 @@ public:
 //        ierr = KSPGetIterationNumber(ksp, &its); CHKERRQ(ierr);
 
         /*
-            Print convergence information.  PetscPrintf() produces a single 
+            Print convergence information.  PetscPrintf() produces a single
             print statement from all processes that share a communicator.
             An alternative is PetscFPrintf(), which prints to a file.
         */
@@ -381,16 +384,16 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    virtual bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
-        KRATOS_THROW_ERROR(std::logic_error, "ERROR: This solver can be used for single RHS only", "");
+        KRATOS_ERROR << "ERROR: This solver can be used for single RHS only";
         return false;
     }
 
     /**
      * Print information about this object.
      */
-    virtual void PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         if(m_my_rank == 0)
             rOStream << "PetscFieldSplit_U_LU_WP solver finished.";
@@ -399,7 +402,7 @@ public:
     /**
      * Print object's data.
      */
-    virtual void  PrintData(std::ostream& rOStream) const
+    void  PrintData(std::ostream& rOStream) const override
     {
     }
 
@@ -414,36 +417,11 @@ private:
     /**
      * Assignment operator.
      */
-    PetscFieldSplit_U_LU_WP_Solver& operator=(const PetscFieldSplit_U_LU_WP_Solver& Other);    
+    PetscFieldSplit_U_LU_WP_Solver& operator=(const PetscFieldSplit_U_LU_WP_Solver& Other);
 };
-
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, PetscFieldSplit_U_LU_WP_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const PetscFieldSplit_U_LU_WP_Solver<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
 
 }  // namespace Kratos.
 
 #undef DEBUG_SOLVER
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_WP_SOLVER_H_INCLUDED  defined 
-
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_FIELDSPLIT_U_WP_SOLVER_H_INCLUDED  defined

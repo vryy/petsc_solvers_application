@@ -37,14 +37,14 @@ namespace Kratos
 /*
 Solver wrapper to set the near nullspace to the matrix. This is particular useful for 3D elasticity and GAMG.
 */
-template<class TSparseSpaceType, class TDenseSpaceType>
-class PetscNullspaceSolverWrapper : public LinearSolver<TSparseSpaceType, TDenseSpaceType>
+template<class TSparseSpaceType, class TDenseSpaceType, class TModelPartType>
+class PetscNullspaceSolverWrapper : public LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType>
 {
 public:
 
     KRATOS_CLASS_POINTER_DEFINITION(PetscNullspaceSolverWrapper);
 
-    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType> BaseType;
+    typedef LinearSolver<TSparseSpaceType, TDenseSpaceType, TModelPartType> BaseType;
 
     typedef typename TSparseSpaceType::MatrixType SparseMatrixType;
 
@@ -56,17 +56,20 @@ public:
 
     typedef typename TSparseSpaceType::ValueType ValueType;
 
+    typedef typename BaseType::ModelPartType ModelPartType;
+
     /**
      * Default Constructor
      */
-    PetscNullspaceSolverWrapper(typename BaseType::Pointer pLinearSolver) : m_my_rank(0), mpLinearSolver(pLinearSolver)
+    PetscNullspaceSolverWrapper(typename BaseType::Pointer pLinearSolver)
+    : BaseType(), m_my_rank(0), mpLinearSolver(pLinearSolver)
     {
     }
 
     /**
      * Destructor
      */
-    virtual ~PetscNullspaceSolverWrapper()
+    ~PetscNullspaceSolverWrapper() override
     {
     }
 
@@ -76,7 +79,7 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function tells if the solver requires such data
      */
-    virtual bool AdditionalPhysicalDataIsNeeded()
+    bool AdditionalPhysicalDataIsNeeded() override
     {
         return true;
     }
@@ -87,13 +90,13 @@ public:
      * which require knowledge on the spatial position of the nodes associated to a given dof.
      * This function is the place to eventually provide such data
      */
-    virtual void ProvideAdditionalData(
+    void ProvideAdditionalData(
         SparseMatrixType& rA,
         VectorType& rX,
         VectorType& rB,
-        typename ModelPart::DofsArrayType& rdof_set,
-        ModelPart& r_model_part
-    )
+        typename ModelPartType::DofsArrayType& rdof_set,
+        ModelPartType& r_model_part
+    ) override
     {
         MPI_Comm Comm = TSparseSpaceType::ExtractComm(TSparseSpaceType::GetComm(rA));
         MPI_Comm_rank(Comm, &m_my_rank);
@@ -111,9 +114,8 @@ public:
         ierr = VecGetArray(vec_coords, &c); //CHKERRQ(ierr);
 
         std::size_t i = 0, node_id;
-        typename ModelPart::NodesContainerType nodes = r_model_part.Nodes();
-        for(typename ModelPart::DofsArrayType::iterator dof_iterator = rdof_set.begin();
-                dof_iterator != rdof_set.end(); ++dof_iterator)
+        typename ModelPartType::NodesContainerType nodes = r_model_part.Nodes();
+        for(auto dof_iterator = rdof_set.begin(); dof_iterator != rdof_set.end(); ++dof_iterator)
         {
             node_id = dof_iterator->Id();
             if(dof_iterator->GetVariable() == DISPLACEMENT_X)
@@ -163,7 +165,7 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    virtual bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB)
+    bool Solve(SparseMatrixType& rA, VectorType& rX, VectorType& rB) override
     {
         bool solve_flag = mpLinearSolver->Solve(rA, rX, rB);
 
@@ -178,15 +180,15 @@ public:
      * @param rX. Solution vector.
      * @param rB. Right hand side vector.
      */
-    virtual bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB)
+    bool Solve(SparseMatrixType& rA, DenseMatrixType& rX, DenseMatrixType& rB) override
     {
-        KRATOS_THROW_ERROR(std::logic_error, "Not yet implement", __FUNCTION__)
+        KRATOS_ERROR << "Not yet implement";
     }
 
     /**
      * Print information about this object.
      */
-    virtual void PrintInfo(std::ostream& rOStream) const
+    void PrintInfo(std::ostream& rOStream) const override
     {
         mpLinearSolver->PrintInfo(rOStream);
         if(m_my_rank == 0)
@@ -196,7 +198,7 @@ public:
     /**
      * Print object's data.
      */
-    virtual void PrintData(std::ostream& rOStream) const
+    void PrintData(std::ostream& rOStream) const override
     {
         mpLinearSolver->PrintData(rOStream);
     }
@@ -211,37 +213,12 @@ private:
     /**
      * Assignment operator.
      */
-    PetscNullspaceSolverWrapper& operator=(const PetscNullspaceSolverWrapper& Other);    
+    PetscNullspaceSolverWrapper& operator=(const PetscNullspaceSolverWrapper& Other);
 };
-
-
-/**
- * input stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType,class TReordererType>
-inline std::istream& operator >> (std::istream& rIStream, PetscNullspaceSolverWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    return rIStream;
-}
-
-/**
- * output stream function
- */
-template<class TSparseSpaceType, class TDenseSpaceType, class TReordererType>
-inline std::ostream& operator << (std::ostream& rOStream, const PetscNullspaceSolverWrapper<TSparseSpaceType, TDenseSpaceType>& rThis)
-{
-    rThis.PrintInfo(rOStream);
-    rOStream << std::endl;
-    rThis.PrintData(rOStream);
-
-    return rOStream;
-}
-
 
 }  // namespace Kratos.
 
 #undef DEBUG_SOLVER
 #undef TEST_NULLSPACE
 
-#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_NULLSPACE_SOLVER_WRAPPER_H_INCLUDED  defined 
-
+#endif // KRATOS_PETSC_SOLVERS_APP_PETSC_NULLSPACE_SOLVER_WRAPPER_H_INCLUDED  defined
